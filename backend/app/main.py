@@ -92,7 +92,10 @@ def google_callback(request: Request, db: Session = Depends(get_db)) -> Redirect
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
 
     flow = build_oauth_flow(state=expected_state, code_verifier=code_verifier)
-    flow.fetch_token(authorization_response=str(request.url))
+    # Use the configured public callback origin so OAuth also works behind a
+    # production reverse proxy such as Caddy or an AWS load balancer.
+    authorization_response = f"{settings.google_redirect_uri}?{request.url.query}"
+    flow.fetch_token(authorization_response=authorization_response)
     credentials: Credentials = flow.credentials
     oauth_service = build("oauth2", "v2", credentials=credentials, cache_discovery=False)
     profile = oauth_service.userinfo().get().execute()

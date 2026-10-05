@@ -133,18 +133,27 @@ Recommended demo sequence:
 4. Show that the worker sends it and the dashboard later reports `sent` with the Gmail message ID.
 5. Schedule three emails one minute apart and show the three independent durable jobs.
 
-## AWS deployment shape
+## AWS demo deployment
 
-For the take-home, keep the topology small:
+The fastest take-home deployment uses one EC2 instance with Docker Compose. It runs the Next.js frontend, FastAPI API, background worker, PostgreSQL, and Caddy. Caddy obtains a trusted HTTPS certificate for an `sslip.io` hostname derived from the instance's Elastic IP. PostgreSQL and certificates use persistent Docker volumes on the EC2 EBS disk.
 
-- Next.js: AWS Amplify Hosting
-- API and worker: one EC2 instance running the two backend containers
-- Database: RDS PostgreSQL
-- Secrets: AWS Secrets Manager or injected task/instance environment variables
-- Logs: CloudWatch agent/container logs
-- Optional attachments: private S3 bucket with short retention
+1. Allocate an Elastic IP and attach it to an Ubuntu EC2 instance.
+2. Allow inbound TCP ports 22 (your IP only), 80, and 443, plus UDP 443.
+3. Install Git and Docker Engine with the Compose plugin.
+4. Clone this repository on the instance.
+5. Copy `.env.production.example` to `.env.production`.
+6. Set `APP_DOMAIN` to `<ELASTIC_IP>.sslip.io` and use the same hostname with `https://` for `FRONTEND_URL` and `BACKEND_URL`.
+7. Fill in fresh application, encryption, Google, NVIDIA, and PostgreSQL secrets.
+8. Start the stack:
 
-Use one HTTPS domain (or sibling subdomains) in production so secure OAuth/session cookies work predictably. Update `FRONTEND_URL`, `BACKEND_URL`, `NEXT_PUBLIC_API_URL`, CORS, and the Google authorized callback URI to the deployed HTTPS addresses.
+   ```bash
+   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+   ```
+
+9. Add `https://<APP_DOMAIN>/auth/google/callback` to the Google OAuth client's authorized redirect URIs.
+10. Open `https://<APP_DOMAIN>`, connect Gmail, schedule an email, shut down the local computer, and verify delivery.
+
+For a larger production system, move PostgreSQL to RDS, place API/worker containers on ECS, and store secrets in Secrets Manager.
 
 ## Current scope
 
