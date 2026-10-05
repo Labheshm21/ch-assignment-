@@ -1,7 +1,9 @@
 FROM node:22-alpine AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Keep npm aligned with the version used to generate and verify package-lock.json.
+# Newer npm patch releases can resolve optional peer dependencies differently.
+RUN npm install --global npm@10.9.4 && npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
