@@ -8,6 +8,7 @@ __pycache__/
 htmlcov/
 *.py[cod]
 *.db
+*.pem
 .next/
 node_modules/
 frontend/.env.local
