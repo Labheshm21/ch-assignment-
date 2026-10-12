@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Chronos Relay",
+  title: "Relay",
   description: "Natural-language Gmail scheduling that keeps running in the cloud.",
 };
 
