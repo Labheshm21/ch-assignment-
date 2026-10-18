@@ -169,7 +169,7 @@ export default function Home() {
       <aside className="sidebar">
         <div>
           <div className="brand-mark">C</div>
-          <p className="eyebrow">CHRONOS RELAY</p>
+          <p className="eyebrow">RELAY AI</p>
           <h1>Email on your time.</h1>
           <p className="muted intro">Describe the message once. Relay handles the clock, retries, and delivery from the cloud.</p>
         </div>
