@@ -8,13 +8,22 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..models import (
     Campaign,
+    CampaignDelivery,
     CampaignRecipient,
+    CampaignRecipientState,
+    CampaignStep,
     Contact,
     EmailStatus,
     ScheduledEmail,
     WorkspaceScheduledEmail,
 )
-from ..schemas import CampaignCreateRequest, CampaignRecipientResponse, CampaignResponse
+from ..schemas import (
+    CampaignCreateRequest,
+    CampaignDeliveryResponse,
+    CampaignRecipientResponse,
+    CampaignResponse,
+    CampaignStepResponse,
+)
 from .scheduling import expand_schedule, to_utc
 
 
@@ -71,20 +80,22 @@ def create_campaign(
     if missing:
         raise ValueError("One or more selected contacts do not belong to this workspace")
 
-    rendered_messages: dict[str, tuple[str, str]] = {}
+    steps = request.steps or []
+    rendered_messages: dict[tuple[str, int], tuple[str, str]] = {}
     for contact_id in request.contact_ids:
         contact = contacts_by_id[contact_id]
-        rendered_messages[contact_id] = (
-            render_contact_template(request.subject, contact),
-            render_contact_template(request.body, contact),
-        )
+        for step_position, step in enumerate(steps):
+            rendered_messages[(contact_id, step_position)] = (
+                render_contact_template(step.subject, contact),
+                render_contact_template(step.body, contact),
+            )
 
     campaign = Campaign(
         workspace_id=workspace_id,
         created_by_user_id=user_id,
         name=request.name,
-        subject=request.subject,
-        body=request.body,
+        subject=request.subject or "",
+        body=request.body or "",
         scheduled_at=start_utc,
         original_timezone=request.timezone,
         interval_minutes=request.interval_minutes,
@@ -92,33 +103,64 @@ def create_campaign(
     db.add(campaign)
     db.flush()
 
+    step_models: list[CampaignStep] = []
+    for position, step in enumerate(steps):
+        step_model = CampaignStep(
+            campaign_id=campaign.id,
+            position=position,
+            subject=step.subject,
+            body=step.body,
+            delay_minutes=step.delay_minutes,
+        )
+        db.add(step_model)
+        step_models.append(step_model)
+    db.flush()
+
     schedule = expand_schedule(start_utc, len(request.contact_ids), request.interval_minutes)
     for position, (contact_id, scheduled_at) in enumerate(zip(request.contact_ids, schedule, strict=True)):
         contact = contacts_by_id[contact_id]
-        rendered_subject, rendered_body = rendered_messages[contact_id]
-        digest = hashlib.sha256(f"campaign|{campaign.id}|{contact.id}".encode()).hexdigest()
-        job = ScheduledEmail(
-            user_id=user_id,
-            recipient=contact.email,
-            subject=rendered_subject,
-            body=rendered_body,
-            scheduled_at=scheduled_at,
-            original_timezone=request.timezone,
-            idempotency_key=digest,
-        )
-        db.add(job)
-        db.flush()
-        db.add(WorkspaceScheduledEmail(scheduled_email_id=job.id, workspace_id=workspace_id))
-        db.add(
-            CampaignRecipient(
-                campaign_id=campaign.id,
-                contact_id=contact.id,
-                scheduled_email_id=job.id,
-                recipient_name=contact.name,
-                recipient_email=contact.email,
-                position=position,
+        jobs: list[ScheduledEmail] = []
+        next_scheduled_at = scheduled_at
+        for step_position, step_model in enumerate(step_models):
+            if step_position:
+                next_scheduled_at += timedelta(minutes=step_model.delay_minutes)
+            rendered_subject, rendered_body = rendered_messages[(contact_id, step_position)]
+            digest = hashlib.sha256(
+                f"campaign|{campaign.id}|{contact.id}|step|{step_position}".encode()
+            ).hexdigest()
+            job = ScheduledEmail(
+                user_id=user_id,
+                recipient=contact.email,
+                subject=rendered_subject,
+                body=rendered_body,
+                scheduled_at=next_scheduled_at,
+                original_timezone=request.timezone,
+                idempotency_key=digest,
             )
+            db.add(job)
+            jobs.append(job)
+        db.flush()
+        recipient = CampaignRecipient(
+            campaign_id=campaign.id,
+            contact_id=contact.id,
+            scheduled_email_id=jobs[0].id,
+            recipient_name=contact.name,
+            recipient_email=contact.email,
+            position=position,
         )
+        db.add(recipient)
+        db.flush()
+        db.add(CampaignRecipientState(campaign_recipient_id=recipient.id))
+        for step_position, (step_model, job) in enumerate(zip(step_models, jobs, strict=True)):
+            db.add(WorkspaceScheduledEmail(scheduled_email_id=job.id, workspace_id=workspace_id))
+            db.add(
+                CampaignDelivery(
+                    campaign_recipient_id=recipient.id,
+                    step_id=step_model.id,
+                    scheduled_email_id=job.id,
+                    step_position=step_position,
+                )
+            )
 
     db.commit()
     created_campaign = get_campaign(db, campaign_id=campaign.id, workspace_id=workspace_id)
@@ -130,7 +172,14 @@ def create_campaign(
 def get_campaign(db: Session, *, campaign_id: str, workspace_id: str) -> Campaign | None:
     return db.execute(
         select(Campaign)
-        .options(selectinload(Campaign.recipients).selectinload(CampaignRecipient.scheduled_email))
+        .options(
+            selectinload(Campaign.steps),
+            selectinload(Campaign.recipients).selectinload(CampaignRecipient.scheduled_email),
+            selectinload(Campaign.recipients)
+            .selectinload(CampaignRecipient.deliveries)
+            .selectinload(CampaignDelivery.scheduled_email),
+            selectinload(Campaign.recipients).selectinload(CampaignRecipient.sequence_state),
+        )
         .where(Campaign.id == campaign_id, Campaign.workspace_id == workspace_id)
     ).scalar_one_or_none()
 
@@ -139,7 +188,14 @@ def list_campaigns(db: Session, *, workspace_id: str) -> list[Campaign]:
     return list(
         db.execute(
             select(Campaign)
-            .options(selectinload(Campaign.recipients).selectinload(CampaignRecipient.scheduled_email))
+            .options(
+                selectinload(Campaign.steps),
+                selectinload(Campaign.recipients).selectinload(CampaignRecipient.scheduled_email),
+                selectinload(Campaign.recipients)
+                .selectinload(CampaignRecipient.deliveries)
+                .selectinload(CampaignDelivery.scheduled_email),
+                selectinload(Campaign.recipients).selectinload(CampaignRecipient.sequence_state),
+            )
             .where(Campaign.workspace_id == workspace_id)
             .order_by(Campaign.created_at.desc())
             .limit(100)
@@ -161,10 +217,40 @@ def campaign_status(status_counts: Counter[str]) -> str:
 
 def serialize_campaign(campaign: Campaign) -> CampaignResponse:
     counts: Counter[str] = Counter()
+    enrollment_counts: Counter[str] = Counter()
     recipients: list[CampaignRecipientResponse] = []
     for recipient in campaign.recipients:
         job = recipient.scheduled_email
-        counts[job.status] += 1
+        delivery_models = recipient.deliveries or []
+        if delivery_models:
+            deliveries = [
+                CampaignDeliveryResponse(
+                    id=delivery.id,
+                    step_id=delivery.step_id,
+                    step_position=delivery.step_position,
+                    scheduled_email_id=delivery.scheduled_email.id,
+                    subject=delivery.scheduled_email.subject,
+                    body=delivery.scheduled_email.body,
+                    scheduled_at=delivery.scheduled_email.scheduled_at,
+                    status=delivery.scheduled_email.status,
+                    retry_count=delivery.scheduled_email.retry_count,
+                    last_error=delivery.scheduled_email.last_error,
+                    gmail_message_id=delivery.scheduled_email.gmail_message_id,
+                    sent_at=delivery.scheduled_email.sent_at,
+                )
+                for delivery in delivery_models
+            ]
+        else:
+            deliveries = []
+        for delivery_job in ([delivery.scheduled_email for delivery in delivery_models] or [job]):
+            counts[delivery_job.status] += 1
+        state = recipient.sequence_state
+        sequence_status = state.status if state is not None else (
+            "completed" if job.status == EmailStatus.sent.value else
+            "failed" if job.status == EmailStatus.failed.value else
+            "cancelled" if job.status == EmailStatus.cancelled.value else "active"
+        )
+        enrollment_counts[sequence_status] += 1
         recipients.append(
             CampaignRecipientResponse(
                 id=recipient.id,
@@ -181,6 +267,10 @@ def serialize_campaign(campaign: Campaign) -> CampaignResponse:
                 last_error=job.last_error,
                 gmail_message_id=job.gmail_message_id,
                 sent_at=job.sent_at,
+                sequence_status=sequence_status,
+                gmail_thread_id=state.gmail_thread_id if state is not None else None,
+                replied_at=state.replied_at if state is not None else None,
+                deliveries=deliveries,
             )
         )
     status_counts = {status.value: counts[status.value] for status in EmailStatus}
@@ -196,6 +286,17 @@ def serialize_campaign(campaign: Campaign) -> CampaignResponse:
         status=campaign_status(counts),
         recipient_count=len(recipients),
         status_counts=status_counts,
+        enrollment_counts=dict(enrollment_counts),
+        steps=[
+            CampaignStepResponse(
+                id=step.id,
+                position=step.position,
+                subject=step.subject,
+                body=step.body,
+                delay_minutes=step.delay_minutes,
+            )
+            for step in campaign.steps
+        ],
         recipients=recipients,
         created_at=campaign.created_at,
     )
@@ -204,8 +305,36 @@ def serialize_campaign(campaign: Campaign) -> CampaignResponse:
 def cancel_campaign(campaign: Campaign) -> int:
     cancelled = 0
     for recipient in campaign.recipients:
-        job = recipient.scheduled_email
-        if job.status == EmailStatus.pending.value:
-            job.status = EmailStatus.cancelled.value
-            cancelled += 1
+        jobs = [delivery.scheduled_email for delivery in recipient.deliveries] or [recipient.scheduled_email]
+        for job in jobs:
+            if job.status == EmailStatus.pending.value:
+                job.status = EmailStatus.cancelled.value
+                cancelled += 1
+        if recipient.sequence_state is not None and recipient.sequence_state.status == "active":
+            recipient.sequence_state.status = "cancelled"
+    return cancelled
+
+
+def mark_recipient_replied(
+    db: Session, *, recipient_id: str, replied_at: datetime
+) -> int:
+    """Stop one enrollment and cancel every follow-up that has not started sending."""
+    state = db.get(CampaignRecipientState, recipient_id)
+    if state is None or state.status != "active":
+        return 0
+    state.status = "replied"
+    state.replied_at = replied_at
+    pending_jobs = db.execute(
+        select(ScheduledEmail)
+        .join(CampaignDelivery, CampaignDelivery.scheduled_email_id == ScheduledEmail.id)
+        .where(
+            CampaignDelivery.campaign_recipient_id == recipient_id,
+            ScheduledEmail.status == EmailStatus.pending.value,
+        )
+    ).scalars()
+    cancelled = 0
+    for pending_job in pending_jobs:
+        pending_job.status = EmailStatus.cancelled.value
+        pending_job.last_error = "Cancelled automatically after recipient reply"
+        cancelled += 1
     return cancelled

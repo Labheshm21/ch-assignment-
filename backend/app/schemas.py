@@ -73,6 +73,7 @@ class AuthStatusResponse(BaseModel):
     email: str | None = None
     workspace_id: str | None = None
     workspace_name: str | None = None
+    reply_monitoring_enabled: bool = False
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -159,11 +160,25 @@ class ContactImportResponse(BaseModel):
     errors: list[ContactImportError]
 
 
+class CampaignStepRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=998)
+    body: str = Field(min_length=1, max_length=100_000)
+    delay_minutes: int = Field(default=0, ge=0, le=43_200)
+
+    @field_validator("subject", "body")
+    @classmethod
+    def step_content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Campaign step content must not be blank")
+        return value
+
+
 class CampaignCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     contact_ids: list[str] = Field(min_length=1, max_length=100)
-    subject: str = Field(min_length=1, max_length=998)
-    body: str = Field(min_length=1, max_length=100_000)
+    subject: str | None = Field(default=None, max_length=998)
+    body: str | None = Field(default=None, max_length=100_000)
+    steps: list[CampaignStepRequest] | None = Field(default=None, min_length=1, max_length=10)
     scheduled_at: datetime
     timezone: str = Field(default="UTC", max_length=64)
     interval_minutes: int = Field(default=0, ge=0, le=43_200)
@@ -178,8 +193,8 @@ class CampaignCreateRequest(BaseModel):
 
     @field_validator("subject", "body")
     @classmethod
-    def content_must_not_be_blank(cls, value: str) -> str:
-        if not value.strip():
+    def content_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
             raise ValueError("Campaign content must not be blank")
         return value
 
@@ -188,6 +203,50 @@ class CampaignCreateRequest(BaseModel):
     def contact_ids_must_be_unique(cls, value: list[str]) -> list[str]:
         if len(set(value)) != len(value):
             raise ValueError("contact_ids must not contain duplicates")
+        return value
+
+    @model_validator(mode="after")
+    def normalize_steps(self) -> "CampaignCreateRequest":
+        if self.steps is None:
+            if self.subject is None or self.body is None:
+                raise ValueError("Provide subject and body, or at least one campaign step")
+            self.steps = [CampaignStepRequest(subject=self.subject, body=self.body, delay_minutes=0)]
+        if self.steps[0].delay_minutes != 0:
+            raise ValueError("The first campaign step must have a delay of 0 minutes")
+        if any(step.delay_minutes < 1 for step in self.steps[1:]):
+            raise ValueError("Follow-up steps must wait at least 1 minute")
+        self.subject = self.steps[0].subject
+        self.body = self.steps[0].body
+        return self
+
+
+class CampaignStepResponse(BaseModel):
+    id: str
+    position: int
+    subject: str
+    body: str
+    delay_minutes: int
+
+
+class CampaignDeliveryResponse(BaseModel):
+    id: str
+    step_id: str
+    step_position: int
+    scheduled_email_id: str
+    subject: str
+    body: str
+    scheduled_at: datetime
+    status: Literal["pending", "processing", "sent", "failed", "cancelled"]
+    retry_count: int
+    last_error: str | None
+    gmail_message_id: str | None
+    sent_at: datetime | None
+
+    @field_validator("scheduled_at", "sent_at", mode="before")
+    @classmethod
+    def mark_delivery_datetimes_as_utc(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
         return value
 
 
@@ -206,8 +265,12 @@ class CampaignRecipientResponse(BaseModel):
     last_error: str | None
     gmail_message_id: str | None
     sent_at: datetime | None
+    sequence_status: Literal["active", "replied", "completed", "failed", "cancelled"] = "active"
+    gmail_thread_id: str | None = None
+    replied_at: datetime | None = None
+    deliveries: list[CampaignDeliveryResponse] = Field(default_factory=list)
 
-    @field_validator("scheduled_at", "sent_at", mode="before")
+    @field_validator("scheduled_at", "sent_at", "replied_at", mode="before")
     @classmethod
     def mark_recipient_datetimes_as_utc(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.tzinfo is None:
@@ -227,6 +290,8 @@ class CampaignResponse(BaseModel):
     status: Literal["scheduled", "in_progress", "completed", "partial_failure", "cancelled"]
     recipient_count: int
     status_counts: dict[str, int]
+    enrollment_counts: dict[str, int] = Field(default_factory=dict)
+    steps: list[CampaignStepResponse] = Field(default_factory=list)
     recipients: list[CampaignRecipientResponse]
     created_at: datetime
 

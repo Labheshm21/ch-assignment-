@@ -11,6 +11,7 @@ type AuthStatus = {
   email: string | null;
   workspace_id: string | null;
   workspace_name: string | null;
+  reply_monitoring_enabled: boolean;
 };
 
 type Workspace = {
@@ -56,7 +57,7 @@ function formatTime(value: string): string {
 }
 
 export default function Home() {
-  const [auth, setAuth] = useState<AuthStatus>({ connected: false, email: null, workspace_id: null, workspace_name: null });
+  const [auth, setAuth] = useState<AuthStatus>({ connected: false, email: null, workspace_id: null, workspace_name: null, reply_monitoring_enabled: false });
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -278,7 +279,7 @@ export default function Home() {
           ) : (
             <button className="text-button" onClick={async () => {
               await api("/auth/logout", { method: "POST" });
-              setAuth({ connected: false, email: null, workspace_id: null, workspace_name: null });
+              setAuth({ connected: false, email: null, workspace_id: null, workspace_name: null, reply_monitoring_enabled: false });
               setWorkspaces([]);
               setJobs([]);
             }}>Disconnect</button>
@@ -365,7 +366,7 @@ export default function Home() {
             ))}
           </div>
         </section>
-        </> : activeView === "campaigns" ? <CampaignsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} /> : <ContactsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} />}
+        </> : activeView === "campaigns" ? <CampaignsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} replyMonitoringEnabled={auth.reply_monitoring_enabled} /> : <ContactsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} />}
       </section>
     </main>
   );

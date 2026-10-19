@@ -193,11 +193,14 @@ def auth_status(request: Request, db: Session = Depends(get_db)) -> AuthStatusRe
     db.commit()
     db.refresh(workspace)
     request.session["workspace_id"] = workspace.id
+    credential_payload = CredentialCipher().decrypt(user.google_credentials_encrypted)
+    granted_scopes = set(credential_payload.get("scopes") or [])
     return AuthStatusResponse(
         connected=True,
         email=user.email,
         workspace_id=workspace.id,
         workspace_name=workspace.name,
+        reply_monitoring_enabled="https://www.googleapis.com/auth/gmail.metadata" in granted_scopes,
     )
 
 
@@ -472,8 +475,12 @@ def stop_campaign(
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if not any(
-        recipient.scheduled_email.status == EmailStatus.pending.value
+        job.status == EmailStatus.pending.value
         for recipient in campaign.recipients
+        for job in (
+            [delivery.scheduled_email for delivery in recipient.deliveries]
+            or [recipient.scheduled_email]
+        )
     ):
         raise HTTPException(status_code=409, detail="This campaign has no pending recipients")
     cancel_campaign(campaign)

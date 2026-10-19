@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import CampaignRecipient, Contact, EmailStatus, ScheduledEmail, User, Workspace, WorkspaceMember
-from app.schemas import CampaignCreateRequest
+from app.models import CampaignDelivery, CampaignRecipient, Contact, EmailStatus, ScheduledEmail, User, Workspace, WorkspaceMember
+from app.schemas import CampaignCreateRequest, CampaignStepRequest
 from app.services.campaigns import (
     cancel_campaign,
     create_campaign,
+    mark_recipient_replied,
     render_contact_template,
     serialize_campaign,
 )
@@ -205,3 +206,82 @@ def test_campaign_rejects_missing_or_unknown_template_variables() -> None:
         render_contact_template("Hello {{first_name}} from {{company}}", contact)
     with pytest.raises(ValueError, match="Unsupported.*nickname"):
         render_contact_template("Hello {{nickname}}", contact)
+
+
+def test_multi_step_campaign_schedules_each_recipient_timeline() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact = add_contact(db, workspace.id, "ada@example.com", "Ada Lovelace")
+        db.commit()
+        start = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        campaign = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=CampaignCreateRequest(
+                name="Three touches",
+                contact_ids=[contact.id],
+                steps=[
+                    CampaignStepRequest(subject="Hello {{first_name}}", body="First", delay_minutes=0),
+                    CampaignStepRequest(subject="Following up", body="Second", delay_minutes=60),
+                    CampaignStepRequest(subject="Last note", body="Third", delay_minutes=1440),
+                ],
+                scheduled_at=start,
+                timezone="UTC",
+            ),
+        )
+        response = serialize_campaign(campaign)
+
+        assert [step.delay_minutes for step in response.steps] == [0, 60, 1440]
+        assert len(response.recipients[0].deliveries) == 3
+        times = [delivery.scheduled_at for delivery in response.recipients[0].deliveries]
+        assert times[1] - times[0] == timedelta(minutes=60)
+        assert times[2] - times[1] == timedelta(days=1)
+        assert response.recipients[0].deliveries[0].subject == "Hello Ada"
+        assert db.scalar(select(func.count()).select_from(ScheduledEmail)) == 3
+        assert db.scalar(select(func.count()).select_from(CampaignDelivery)) == 3
+
+
+def test_reply_stops_only_that_recipient_pending_followups() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        first = add_contact(db, workspace.id, "ada@example.com", "Ada")
+        second = add_contact(db, workspace.id, "grace@example.com", "Grace")
+        db.commit()
+        campaign = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=CampaignCreateRequest(
+                name="Reply-aware",
+                contact_ids=[first.id, second.id],
+                steps=[
+                    CampaignStepRequest(subject="Hello", body="First", delay_minutes=0),
+                    CampaignStepRequest(subject="Follow-up", body="Second", delay_minutes=60),
+                ],
+                scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                timezone="UTC",
+            ),
+        )
+        first_recipient = campaign.recipients[0]
+        first_recipient.deliveries[0].scheduled_email.status = EmailStatus.sent.value
+
+        cancelled = mark_recipient_replied(
+            db,
+            recipient_id=first_recipient.id,
+            replied_at=datetime.now(timezone.utc),
+        )
+        db.commit()
+        response = serialize_campaign(campaign)
+
+        assert cancelled == 1
+        assert response.recipients[0].sequence_status == "replied"
+        assert [delivery.status for delivery in response.recipients[0].deliveries] == ["sent", "cancelled"]
+        assert [delivery.status for delivery in response.recipients[1].deliveries] == ["pending", "pending"]

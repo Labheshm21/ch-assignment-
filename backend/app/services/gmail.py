@@ -1,5 +1,8 @@
 import base64
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -34,9 +37,21 @@ def build_raw_message(*, sender: str, recipient: str, subject: str, body: str) -
     return base64.urlsafe_b64encode(message.as_bytes()).decode()
 
 
+@dataclass(frozen=True)
+class GmailSendResult:
+    message_id: str
+    thread_id: str | None
+
+
 def send_gmail_message(
-    db: Session, *, user: User, recipient: str, subject: str, body: str
-) -> str:
+    db: Session,
+    *,
+    user: User,
+    recipient: str,
+    subject: str,
+    body: str,
+    thread_id: str | None = None,
+) -> GmailSendResult:
     credentials = _credentials_for_user(db, user)
     service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
     raw = build_raw_message(
@@ -45,6 +60,48 @@ def send_gmail_message(
         subject=subject,
         body=body,
     )
-    result = service.users().messages().send(userId="me", body={"raw": raw}).execute()
-    return result["id"]
+    request_body = {"raw": raw}
+    if thread_id is not None:
+        request_body["threadId"] = thread_id
+    result = service.users().messages().send(userId="me", body=request_body).execute()
+    return GmailSendResult(message_id=result["id"], thread_id=result.get("threadId"))
+
+
+def find_reply_in_thread(
+    db: Session,
+    *,
+    user: User,
+    thread_id: str,
+    recipient_email: str,
+    after: datetime | None,
+) -> datetime | None:
+    """Return the first human reply time from the campaign recipient, if present."""
+    credentials = _credentials_for_user(db, user)
+    service = build("gmail", "v1", credentials=credentials, cache_discovery=False)
+    thread = (
+        service.users()
+        .threads()
+        .get(
+            userId="me",
+            id=thread_id,
+            format="metadata",
+            metadataHeaders=["From", "Auto-Submitted"],
+        )
+        .execute()
+    )
+    target = recipient_email.casefold()
+    after_ms = int(after.timestamp() * 1_000) if after is not None else 0
+    for message in thread.get("messages", []):
+        received_ms = int(message.get("internalDate", "0"))
+        if received_ms <= after_ms:
+            continue
+        headers = {
+            header.get("name", "").casefold(): header.get("value", "")
+            for header in message.get("payload", {}).get("headers", [])
+        }
+        sender = parseaddr(headers.get("from", ""))[1].casefold()
+        auto_submitted = headers.get("auto-submitted", "").casefold()
+        if sender == target and auto_submitted in {"", "no"}:
+            return datetime.fromtimestamp(received_ms / 1_000, tz=timezone.utc)
+    return None
 

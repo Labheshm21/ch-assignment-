@@ -168,6 +168,31 @@ class Campaign(Base):
     recipients: Mapped[list["CampaignRecipient"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan", order_by="CampaignRecipient.position"
     )
+    steps: Mapped[list["CampaignStep"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan", order_by="CampaignStep.position"
+    )
+
+
+class CampaignStep(Base):
+    __tablename__ = "campaign_steps"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "position", name="uq_campaign_steps_position"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    subject: Mapped[str] = mapped_column(String(998))
+    body: Mapped[str] = mapped_column(Text)
+    delay_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    campaign: Mapped[Campaign] = relationship(back_populates="steps")
+    deliveries: Mapped[list["CampaignDelivery"]] = relationship(
+        back_populates="step", cascade="all, delete-orphan"
+    )
 
 
 class CampaignRecipient(Base):
@@ -195,4 +220,66 @@ class CampaignRecipient(Base):
     campaign: Mapped[Campaign] = relationship(back_populates="recipients")
     contact: Mapped[Contact | None] = relationship()
     scheduled_email: Mapped[ScheduledEmail] = relationship(back_populates="campaign_recipient")
+    deliveries: Mapped[list["CampaignDelivery"]] = relationship(
+        back_populates="recipient", cascade="all, delete-orphan", order_by="CampaignDelivery.step_position"
+    )
+    sequence_state: Mapped["CampaignRecipientState | None"] = relationship(
+        back_populates="recipient", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class CampaignDelivery(Base):
+    __tablename__ = "campaign_deliveries"
+    __table_args__ = (
+        UniqueConstraint("campaign_recipient_id", "step_id", name="uq_campaign_delivery_step"),
+        UniqueConstraint("scheduled_email_id", name="uq_campaign_delivery_job"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_recipient_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign_recipients.id", ondelete="CASCADE"), index=True
+    )
+    step_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign_steps.id", ondelete="CASCADE"), index=True
+    )
+    scheduled_email_id: Mapped[str] = mapped_column(
+        ForeignKey("scheduled_emails.id", ondelete="CASCADE"), index=True
+    )
+    step_position: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    recipient: Mapped[CampaignRecipient] = relationship(back_populates="deliveries")
+    step: Mapped[CampaignStep] = relationship(back_populates="deliveries")
+    scheduled_email: Mapped[ScheduledEmail] = relationship()
+    provider_thread: Mapped["CampaignDeliveryThread | None"] = relationship(
+        back_populates="delivery", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class CampaignDeliveryThread(Base):
+    __tablename__ = "campaign_delivery_threads"
+
+    campaign_delivery_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign_deliveries.id", ondelete="CASCADE"), primary_key=True
+    )
+    gmail_thread_id: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    delivery: Mapped[CampaignDelivery] = relationship(back_populates="provider_thread")
+
+
+class CampaignRecipientState(Base):
+    __tablename__ = "campaign_recipient_states"
+
+    campaign_recipient_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign_recipients.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    gmail_thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    recipient: Mapped[CampaignRecipient] = relationship(back_populates="sequence_state")
 

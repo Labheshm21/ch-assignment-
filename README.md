@@ -4,7 +4,7 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 
 ## What is implemented
 
-- Google OAuth 2.0 with the minimal `gmail.send` permission
+- Google OAuth 2.0 with `gmail.send` plus metadata-only thread access for reply-aware sequences
 - Natural-language extraction with an NVIDIA NIM hosted model
 - Explicit confirmation before any job is created
 - One-time and interval batches (for example, 10 emails one hour apart)
@@ -14,7 +14,7 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Multi-workspace client switcher with session-backed selection and owner/admin/member roles
 - Workspace-scoped contact management with manual add, edit, search, delete, CSV import, and CSV export
 - Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
-- Workspace-scoped campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, and per-recipient status tracking
+- Workspace-scoped multi-step campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, per-step status tracking, and automatic stop-on-reply
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
 - Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
@@ -138,7 +138,8 @@ Recommended demo sequence:
 5. Schedule an email to another account for two minutes in the future.
 6. Confirm it and close the browser.
 7. Show that the worker sends it and the dashboard later reports `sent` with the Gmail message ID.
-8. Create a campaign, select workspace contacts, optionally stagger delivery, and expand it to show each recipient's independent status.
+8. Create a multi-step campaign, select workspace contacts, optionally stagger delivery, and expand it to show each recipient's independent delivery timeline.
+9. Reply to a sent campaign email and show that Relay marks that recipient as replied while cancelling only their remaining follow-ups.
 
 Contact imports accept UTF-8 CSV files up to 2 MB and 1,000 rows with these headers:
 
@@ -171,13 +172,13 @@ For a larger production system, move PostgreSQL to RDS, place API/worker contain
 
 ## Current scope
 
-Attachments, voice input, recurring calendar rules, multi-step sequences, team invitations, and reply detection remain outside this milestone. Campaigns currently send one user-approved, optionally personalized message to a selected contact set, with an optional interval between recipients. Supported template variables are `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, and `{{job_title}}`.
+Attachments, voice input, recurring calendar rules, team invitations, unsubscribe handling, and reply classification remain outside this milestone. Campaigns support up to ten personalized steps, an optional interval between recipients, cumulative delays between steps, and deterministic Gmail-thread reply detection that cancels pending follow-ups for that recipient. Supported template variables are `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, and `{{job_title}}`.
 
 ## Safety notes
 
 - The UI requires confirmation before scheduling.
 - Batch size is capped at 100 emails.
-- Only the narrow Gmail send scope is requested.
+- Gmail message content is not read or sent to the AI model for reply detection; Relay checks only thread metadata and sender headers using the `gmail.metadata` scope.
 - OAuth credentials are encrypted at rest with Fernet.
 - The worker persists provider errors and uses bounded retries.
 - Use only consenting test recipients during development.
