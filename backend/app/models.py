@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -32,6 +32,65 @@ class User(Base):
     scheduled_emails: Mapped[list["ScheduledEmail"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    workspace_memberships: Mapped[list["WorkspaceMember"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    members: Mapped[list["WorkspaceMember"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+    contacts: Mapped[list["Contact"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+    scheduled_email_assignments: Mapped[list["WorkspaceScheduledEmail"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_members_workspace_user"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(24), default="owner")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    workspace: Mapped[Workspace] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="workspace_memberships")
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "normalized_email", name="uq_contacts_workspace_email"),
+        Index("ix_contacts_workspace_created", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    email: Mapped[str] = mapped_column(String(320))
+    normalized_email: Mapped[str] = mapped_column(String(320))
+    company: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    workspace: Mapped[Workspace] = relationship(back_populates="contacts")
 
 
 class ScheduledEmail(Base):
@@ -59,4 +118,22 @@ class ScheduledEmail(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="scheduled_emails")
+    workspace_assignment: Mapped["WorkspaceScheduledEmail | None"] = relationship(
+        back_populates="scheduled_email", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class WorkspaceScheduledEmail(Base):
+    __tablename__ = "workspace_scheduled_emails"
+
+    scheduled_email_id: Mapped[str] = mapped_column(
+        ForeignKey("scheduled_emails.id", ondelete="CASCADE"), primary_key=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    scheduled_email: Mapped[ScheduledEmail] = relationship(back_populates="workspace_assignment")
+    workspace: Mapped[Workspace] = relationship(back_populates="scheduled_email_assignments")
 

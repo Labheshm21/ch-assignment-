@@ -2,7 +2,22 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type AuthStatus = { connected: boolean; email: string | null };
+import ContactsPanel from "./contacts-panel";
+import { API_URL, api } from "@/lib/api";
+
+type AuthStatus = {
+  connected: boolean;
+  email: string | null;
+  workspace_id: string | null;
+  workspace_name: string | null;
+};
+
+type Workspace = {
+  id: string;
+  name: string;
+  role: "owner" | "admin" | "member";
+  created_at: string;
+};
 
 type EmailIntent = {
   action: "schedule_email" | "needs_clarification";
@@ -30,32 +45,21 @@ type ScheduledEmail = {
   created_at: string;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 const examples = [
   "Send an email to alex@example.com tomorrow at 9 AM saying: Great meeting you. Subject: Following up",
   "Send 3 emails to me@example.com, one every hour starting at 1 PM. Subject: Delivery test. Body: Scheduled check-in.",
 ];
-
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
-    ...options,
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(payload.detail ?? `Request failed with ${response.status}`);
-  }
-  return response.json();
-}
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 export default function Home() {
-  const [auth, setAuth] = useState<AuthStatus>({ connected: false, email: null });
+  const [auth, setAuth] = useState<AuthStatus>({ connected: false, email: null, workspace_id: null, workspace_name: null });
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [showWorkspaceForm, setShowWorkspaceForm] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [conversationContext, setConversationContext] = useState("");
   const [followUp, setFollowUp] = useState("");
@@ -63,13 +67,24 @@ export default function Home() {
   const [jobs, setJobs] = useState<ScheduledEmail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"scheduler" | "contacts">("scheduler");
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
   const refresh = useCallback(async () => {
     try {
       const status = await api<AuthStatus>("/auth/status");
       setAuth(status);
-      if (status.connected) setJobs(await api<ScheduledEmail[]>("/api/emails"));
+      if (status.connected) {
+        const [emailJobs, availableWorkspaces] = await Promise.all([
+          api<ScheduledEmail[]>("/api/emails"),
+          api<Workspace[]>("/api/workspaces"),
+        ]);
+        setJobs(emailJobs);
+        setWorkspaces(availableWorkspaces);
+      } else {
+        setJobs([]);
+        setWorkspaces([]);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load the app");
     }
@@ -164,15 +179,89 @@ export default function Home() {
     }
   }
 
+  async function switchWorkspace(workspaceId: string) {
+    if (!workspaceId || workspaceId === auth.workspace_id) return;
+    setWorkspaceBusy(true);
+    setError(null);
+    try {
+      await api<Workspace>(`/api/workspaces/${workspaceId}/select`, { method: "POST" });
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not switch workspace");
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
+  async function createClientWorkspace(event: FormEvent) {
+    event.preventDefault();
+    if (!workspaceName.trim()) return;
+    setWorkspaceBusy(true);
+    setError(null);
+    try {
+      await api<Workspace>("/api/workspaces", {
+        method: "POST",
+        body: JSON.stringify({ name: workspaceName }),
+      });
+      setWorkspaceName("");
+      setShowWorkspaceForm(false);
+      setActiveView("contacts");
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create workspace");
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <div>
-          <div className="brand-mark">C</div>
+          <div className="brand-mark">R</div>
           <p className="eyebrow">RELAY AI</p>
           <h1>Email on your time.</h1>
           <p className="muted intro">Describe the message once. Relay handles the clock, retries, and delivery from the cloud.</p>
         </div>
+
+        <nav className="sidebar-nav" aria-label="Product navigation">
+          <button className={activeView === "scheduler" ? "active" : ""} onClick={() => setActiveView("scheduler")}><span>↗</span>Scheduler</button>
+          <button className={activeView === "contacts" ? "active" : ""} onClick={() => setActiveView("contacts")}><span>◎</span>Contacts</button>
+        </nav>
+
+        {auth.connected && (
+          <section className="workspace-switcher">
+            <label htmlFor="active-workspace">Active client</label>
+            <div className="workspace-select-wrap">
+              <span>{(auth.workspace_name || "W").charAt(0).toUpperCase()}</span>
+              <select
+                id="active-workspace"
+                value={auth.workspace_id ?? ""}
+                disabled={workspaceBusy}
+                onChange={(event) => void switchWorkspace(event.target.value)}
+              >
+                {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+              </select>
+            </div>
+            {!showWorkspaceForm ? (
+              <button className="add-workspace-button" type="button" onClick={() => setShowWorkspaceForm(true)}>+ Add client workspace</button>
+            ) : (
+              <form className="workspace-create-form" onSubmit={createClientWorkspace}>
+                <input
+                  autoFocus
+                  value={workspaceName}
+                  maxLength={160}
+                  placeholder="Client company name"
+                  onChange={(event) => setWorkspaceName(event.target.value)}
+                />
+                <div>
+                  <button type="button" onClick={() => { setShowWorkspaceForm(false); setWorkspaceName(""); }}>Cancel</button>
+                  <button type="submit" disabled={workspaceBusy || workspaceName.trim().length < 2}>Create</button>
+                </div>
+              </form>
+            )}
+          </section>
+        )}
 
         <div className="connection-card">
           <div className="connection-row">
@@ -187,7 +276,8 @@ export default function Home() {
           ) : (
             <button className="text-button" onClick={async () => {
               await api("/auth/logout", { method: "POST" });
-              setAuth({ connected: false, email: null });
+              setAuth({ connected: false, email: null, workspace_id: null, workspace_name: null });
+              setWorkspaces([]);
               setJobs([]);
             }}>Disconnect</button>
           )}
@@ -198,10 +288,13 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow dark">COMMAND CENTER</p><h2>What should happen next?</h2></div>
+          <div><p className="eyebrow dark">{activeView === "scheduler" ? "COMMAND CENTER" : "CONTACTS"}</p><h2>{activeView === "scheduler" ? "What should happen next?" : "Who are you reaching?"}</h2></div>
           <div className="cloud-badge"><span /> Cloud worker active</div>
         </header>
 
+        {error && <div className="error-banner">{error}</div>}
+
+        {activeView === "scheduler" ? <>
         <section className="composer-card">
           <div className="assistant-line"><div className="avatar">AI</div><p>Tell me who to email, what to say, and when to send it.</p></div>
           <form onSubmit={analyze}>
@@ -219,8 +312,6 @@ export default function Home() {
             {examples.map((example, index) => <button key={example} onClick={() => setPrompt(example)}>{index === 0 ? "One email" : "Hourly batch"}</button>)}
           </div>
         </section>
-
-        {error && <div className="error-banner">{error}</div>}
 
         {intent?.action === "needs_clarification" && (
           <section className="clarification-card">
@@ -272,6 +363,7 @@ export default function Home() {
             ))}
           </div>
         </section>
+        </> : <ContactsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} />}
       </section>
     </main>
   );

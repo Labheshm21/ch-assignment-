@@ -71,4 +71,90 @@ class ScheduleBatchResponse(BaseModel):
 class AuthStatusResponse(BaseModel):
     connected: bool
     email: str | None = None
+    workspace_id: str | None = None
+    workspace_name: str | None = None
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        return " ".join(value.split())
+
+
+class WorkspaceUpdateRequest(WorkspaceCreateRequest):
+    pass
+
+
+class WorkspaceResponse(BaseModel):
+    id: str
+    name: str
+    role: Literal["owner", "admin", "member"]
+    created_at: datetime
+
+
+class ContactUpsertRequest(BaseModel):
+    email: EmailStr
+    name: str | None = Field(default=None, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
+    job_title: str | None = Field(default=None, max_length=200)
+    tags: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("name", "company", "job_title", mode="before")
+    @classmethod
+    def clean_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or None
+        return value
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        unique: list[str] = []
+        seen: set[str] = set()
+        for raw_tag in value:
+            tag = raw_tag.strip()
+            key = tag.casefold()
+            if tag and key not in seen:
+                if len(tag) > 50:
+                    raise ValueError("Tags must be 50 characters or fewer")
+                seen.add(key)
+                unique.append(tag)
+        return unique
+
+
+class ContactResponse(BaseModel):
+    id: str
+    workspace_id: str
+    name: str | None
+    email: str
+    company: str | None
+    job_title: str | None
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ContactMutationResponse(BaseModel):
+    contact: ContactResponse
+    created: bool
+
+
+class ContactImportError(BaseModel):
+    row: int
+    message: str
+
+
+class ContactImportResponse(BaseModel):
+    added: int
+    updated: int
+    rejected: int
+    errors: list[ContactImportError]
 

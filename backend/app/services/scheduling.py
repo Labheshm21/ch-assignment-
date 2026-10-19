@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
 
-from ..models import ScheduledEmail
+from ..models import ScheduledEmail, WorkspaceScheduledEmail
 from ..schemas import ScheduleEmailRequest
 
 
@@ -22,7 +22,7 @@ def expand_schedule(start: datetime, count: int, interval_minutes: int) -> list[
 
 
 def create_schedule_batch(
-    db: Session, *, user_id: str, request: ScheduleEmailRequest
+    db: Session, *, user_id: str, request: ScheduleEmailRequest, workspace_id: str | None = None
 ) -> list[ScheduledEmail]:
     start_utc = to_utc(request.scheduled_at, request.timezone)
     now = datetime.now(timezone.utc)
@@ -30,7 +30,7 @@ def create_schedule_batch(
         raise ValueError("The scheduled time must be in the future")
 
     jobs: list[ScheduledEmail] = []
-    batch_seed = f"{user_id}|{request.recipient}|{request.subject}|{request.body}|{start_utc.isoformat()}"
+    batch_seed = f"{user_id}|{workspace_id or ''}|{request.recipient}|{request.subject}|{request.body}|{start_utc.isoformat()}"
     for index, scheduled_at in enumerate(
         expand_schedule(start_utc, request.count, request.interval_minutes)
     ):
@@ -45,6 +45,9 @@ def create_schedule_batch(
             idempotency_key=digest,
         )
         db.add(job)
+        if workspace_id is not None:
+            db.flush()
+            db.add(WorkspaceScheduledEmail(scheduled_email_id=job.id, workspace_id=workspace_id))
         jobs.append(job)
 
     db.commit()

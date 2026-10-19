@@ -1,6 +1,6 @@
-# Chronos Relay
+# Relay AI
 
-Chronos Relay is a cloud-ready Gmail scheduling agent. A user connects Gmail, describes an email request in natural language, reviews the parsed plan, and confirms it. Durable database jobs are then processed by a separate worker, so delivery continues after the browser and the user's computer are closed.
+Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connects Gmail, manages contacts in a workspace, describes an email request in natural language, reviews the parsed plan, and confirms it. Durable database jobs are then processed by a separate worker, so delivery continues after the browser and the user's computer are closed.
 
 ## What is implemented
 
@@ -11,6 +11,9 @@ Chronos Relay is a cloud-ready Gmail scheduling agent. A user connects Gmail, de
 - PostgreSQL/SQLite persistence
 - Separate delivery worker with row locking, stale-lock recovery, retries, and terminal failure state
 - Pending/sent/failed/cancelled dashboard and cancellation
+- Multi-workspace client switcher with session-backed selection and owner/admin/member roles
+- Workspace-scoped contact management with manual add, edit, search, delete, CSV import, and CSV export
+- Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
 - Unit tests for schedule expansion, timezone conversion, and Gmail MIME generation
@@ -20,7 +23,7 @@ The NVIDIA model only produces a proposed intent. Application code validates it 
 ## Architecture
 
 ```text
-Next.js browser UI
+Next.js browser UI (scheduler + contacts)
         |
         v
 FastAPI API -----> NVIDIA NIM API (intent extraction only)
@@ -128,10 +131,20 @@ npm run build
 Recommended demo sequence:
 
 1. Connect a dedicated Gmail test account.
-2. Schedule an email to another account for two minutes in the future.
-3. Confirm it and close the browser.
-4. Show that the worker sends it and the dashboard later reports `sent` with the Gmail message ID.
-5. Schedule three emails one minute apart and show the three independent durable jobs.
+2. Create two client workspaces and switch between them to demonstrate tenant isolation.
+3. Add a contact manually, then import a CSV containing one new and one existing email to demonstrate upsert.
+4. Export the selected workspace's contacts as CSV.
+5. Schedule an email to another account for two minutes in the future.
+6. Confirm it and close the browser.
+7. Show that the worker sends it and the dashboard later reports `sent` with the Gmail message ID.
+8. Schedule three emails one minute apart and show the three independent durable jobs.
+
+Contact imports accept UTF-8 CSV files up to 2 MB and 1,000 rows with these headers:
+
+```csv
+name,email,company,job_title,tags
+Ada Lovelace,ada@example.com,Analytical Engines,Founder,VIP;Technical
+```
 
 ## AWS demo deployment
 
@@ -157,7 +170,7 @@ For a larger production system, move PostgreSQL to RDS, place API/worker contain
 
 ## Current scope
 
-Attachments, voice input, recurring calendar rules, and arbitrary recipient lists are intentionally outside the first milestone. The core requirement is durable, user-confirmed Gmail delivery from natural language. Attachments can later be stored privately in S3 and referenced by job ID.
+Attachments, voice input, recurring calendar rules, multi-step campaigns, team invitations, and reply detection remain outside this milestone. The current version establishes durable delivery plus client workspace switching and workspace-scoped contacts. The next milestone will enroll selected contacts into user-approved, multi-step campaigns.
 
 ## Safety notes
 
