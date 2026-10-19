@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import ContactsPanel from "./contacts-panel";
+import CampaignsPanel from "./campaigns-panel";
 import { API_URL, api } from "@/lib/api";
 
 type AuthStatus = {
@@ -67,7 +68,7 @@ export default function Home() {
   const [jobs, setJobs] = useState<ScheduledEmail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"scheduler" | "contacts">("scheduler");
+  const [activeView, setActiveView] = useState<"scheduler" | "campaigns" | "contacts">("scheduler");
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
   const refresh = useCallback(async () => {
@@ -226,6 +227,7 @@ export default function Home() {
 
         <nav className="sidebar-nav" aria-label="Product navigation">
           <button className={activeView === "scheduler" ? "active" : ""} onClick={() => setActiveView("scheduler")}><span>↗</span>Scheduler</button>
+          <button className={activeView === "campaigns" ? "active" : ""} onClick={() => setActiveView("campaigns")}><span>◫</span>Campaigns</button>
           <button className={activeView === "contacts" ? "active" : ""} onClick={() => setActiveView("contacts")}><span>◎</span>Contacts</button>
         </nav>
 
@@ -288,7 +290,7 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow dark">{activeView === "scheduler" ? "COMMAND CENTER" : "CONTACTS"}</p><h2>{activeView === "scheduler" ? "What should happen next?" : "Who are you reaching?"}</h2></div>
+          <div><p className="eyebrow dark">{activeView === "scheduler" ? "COMMAND CENTER" : activeView === "campaigns" ? "CAMPAIGNS" : "CONTACTS"}</p><h2>{activeView === "scheduler" ? "What should happen next?" : activeView === "campaigns" ? "Reach the right people." : "Who are you reaching?"}</h2></div>
           <div className="cloud-badge"><span /> Cloud worker active</div>
         </header>
 
@@ -363,7 +365,7 @@ export default function Home() {
             ))}
           </div>
         </section>
-        </> : <ContactsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} />}
+        </> : activeView === "campaigns" ? <CampaignsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} /> : <ContactsPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} />}
       </section>
     </main>
   );

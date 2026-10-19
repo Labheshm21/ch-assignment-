@@ -14,16 +14,17 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Multi-workspace client switcher with session-backed selection and owner/admin/member roles
 - Workspace-scoped contact management with manual add, edit, search, delete, CSV import, and CSV export
 - Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
+- Workspace-scoped campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, and per-recipient status tracking
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
-- Unit tests for schedule expansion, timezone conversion, and Gmail MIME generation
+- Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
 
 The NVIDIA model only produces a proposed intent. Application code validates it against a typed schema and stores the schedule; the model never receives Gmail credentials and never sends an email directly.
 
 ## Architecture
 
 ```text
-Next.js browser UI (scheduler + contacts)
+Next.js browser UI (scheduler + contacts + campaigns)
         |
         v
 FastAPI API -----> NVIDIA NIM API (intent extraction only)
@@ -137,7 +138,7 @@ Recommended demo sequence:
 5. Schedule an email to another account for two minutes in the future.
 6. Confirm it and close the browser.
 7. Show that the worker sends it and the dashboard later reports `sent` with the Gmail message ID.
-8. Schedule three emails one minute apart and show the three independent durable jobs.
+8. Create a campaign, select workspace contacts, optionally stagger delivery, and expand it to show each recipient's independent status.
 
 Contact imports accept UTF-8 CSV files up to 2 MB and 1,000 rows with these headers:
 
@@ -170,7 +171,7 @@ For a larger production system, move PostgreSQL to RDS, place API/worker contain
 
 ## Current scope
 
-Attachments, voice input, recurring calendar rules, multi-step campaigns, team invitations, and reply detection remain outside this milestone. The current version establishes durable delivery plus client workspace switching and workspace-scoped contacts. The next milestone will enroll selected contacts into user-approved, multi-step campaigns.
+Attachments, voice input, recurring calendar rules, multi-step sequences, team invitations, and reply detection remain outside this milestone. Campaigns currently send one user-approved, optionally personalized message to a selected contact set, with an optional interval between recipients. Supported template variables are `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, and `{{job_title}}`.
 
 ## Safety notes
 

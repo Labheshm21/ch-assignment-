@@ -24,6 +24,8 @@ from .models import (
 )
 from .schemas import (
     AuthStatusResponse,
+    CampaignCreateRequest,
+    CampaignResponse,
     ContactImportResponse,
     ContactMutationResponse,
     ContactResponse,
@@ -44,6 +46,13 @@ from .services.contacts import (
     import_contacts_csv,
     update_contact,
     upsert_contact,
+)
+from .services.campaigns import (
+    cancel_campaign,
+    create_campaign,
+    get_campaign,
+    list_campaigns,
+    serialize_campaign,
 )
 from .services.intent import parse_email_intent
 from .services.oauth import build_oauth_flow, serialize_credentials
@@ -408,6 +417,71 @@ def delete_contact(
     db.delete(contact)
     db.commit()
     return {"ok": True}
+
+
+@app.post("/api/campaigns", response_model=CampaignResponse, status_code=201)
+def schedule_campaign(
+    payload: CampaignCreateRequest,
+    user: User = Depends(current_user),
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> CampaignResponse:
+    try:
+        campaign = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=payload,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return serialize_campaign(campaign)
+
+
+@app.get("/api/campaigns", response_model=list[CampaignResponse])
+def get_campaigns(
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> list[CampaignResponse]:
+    return [
+        serialize_campaign(campaign)
+        for campaign in list_campaigns(db, workspace_id=workspace.id)
+    ]
+
+
+@app.get("/api/campaigns/{campaign_id}", response_model=CampaignResponse)
+def get_campaign_detail(
+    campaign_id: str,
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> CampaignResponse:
+    campaign = get_campaign(db, campaign_id=campaign_id, workspace_id=workspace.id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return serialize_campaign(campaign)
+
+
+@app.delete("/api/campaigns/{campaign_id}", response_model=CampaignResponse)
+def stop_campaign(
+    campaign_id: str,
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> CampaignResponse:
+    campaign = get_campaign(db, campaign_id=campaign_id, workspace_id=workspace.id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if not any(
+        recipient.scheduled_email.status == EmailStatus.pending.value
+        for recipient in campaign.recipients
+    ):
+        raise HTTPException(status_code=409, detail="This campaign has no pending recipients")
+    cancel_campaign(campaign)
+    db.commit()
+    updated_campaign = get_campaign(db, campaign_id=campaign_id, workspace_id=workspace.id)
+    if updated_campaign is None:  # pragma: no cover - guarded by the lookup above
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return serialize_campaign(updated_campaign)
 
 
 @app.post("/api/intents/parse", response_model=ParsedEmailIntent)

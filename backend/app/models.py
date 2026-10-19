@@ -54,6 +54,9 @@ class Workspace(Base):
     scheduled_email_assignments: Mapped[list["WorkspaceScheduledEmail"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
     )
+    campaigns: Mapped[list["Campaign"]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
+    )
 
 
 class WorkspaceMember(Base):
@@ -121,6 +124,9 @@ class ScheduledEmail(Base):
     workspace_assignment: Mapped["WorkspaceScheduledEmail | None"] = relationship(
         back_populates="scheduled_email", cascade="all, delete-orphan", uselist=False
     )
+    campaign_recipient: Mapped["CampaignRecipient | None"] = relationship(
+        back_populates="scheduled_email", uselist=False
+    )
 
 
 class WorkspaceScheduledEmail(Base):
@@ -136,4 +142,57 @@ class WorkspaceScheduledEmail(Base):
 
     scheduled_email: Mapped[ScheduledEmail] = relationship(back_populates="workspace_assignment")
     workspace: Mapped[Workspace] = relationship(back_populates="scheduled_email_assignments")
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    __table_args__ = (Index("ix_campaigns_workspace_created", "workspace_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(String(998))
+    body: Mapped[str] = mapped_column(Text)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    original_timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    interval_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    workspace: Mapped[Workspace] = relationship(back_populates="campaigns")
+    recipients: Mapped[list["CampaignRecipient"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan", order_by="CampaignRecipient.position"
+    )
+
+
+class CampaignRecipient(Base):
+    __tablename__ = "campaign_recipients"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "contact_id", name="uq_campaign_recipients_contact"),
+        Index("ix_campaign_recipients_campaign_position", "campaign_id", "position"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    contact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    scheduled_email_id: Mapped[str] = mapped_column(
+        ForeignKey("scheduled_emails.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    recipient_email: Mapped[str] = mapped_column(String(320))
+    position: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    campaign: Mapped[Campaign] = relationship(back_populates="recipients")
+    contact: Mapped[Contact | None] = relationship()
+    scheduled_email: Mapped[ScheduledEmail] = relationship(back_populates="campaign_recipient")
 

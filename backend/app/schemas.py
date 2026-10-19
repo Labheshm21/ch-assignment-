@@ -158,3 +158,82 @@ class ContactImportResponse(BaseModel):
     rejected: int
     errors: list[ContactImportError]
 
+
+class CampaignCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    contact_ids: list[str] = Field(min_length=1, max_length=100)
+    subject: str = Field(min_length=1, max_length=998)
+    body: str = Field(min_length=1, max_length=100_000)
+    scheduled_at: datetime
+    timezone: str = Field(default="UTC", max_length=64)
+    interval_minutes: int = Field(default=0, ge=0, le=43_200)
+
+    @field_validator("name")
+    @classmethod
+    def clean_campaign_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("Campaign name must be at least 2 characters")
+        return cleaned
+
+    @field_validator("subject", "body")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Campaign content must not be blank")
+        return value
+
+    @field_validator("contact_ids")
+    @classmethod
+    def contact_ids_must_be_unique(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("contact_ids must not contain duplicates")
+        return value
+
+
+class CampaignRecipientResponse(BaseModel):
+    id: str
+    contact_id: str | None
+    scheduled_email_id: str
+    recipient_name: str | None
+    recipient_email: str
+    position: int
+    subject: str
+    body: str
+    scheduled_at: datetime
+    status: Literal["pending", "processing", "sent", "failed", "cancelled"]
+    retry_count: int
+    last_error: str | None
+    gmail_message_id: str | None
+    sent_at: datetime | None
+
+    @field_validator("scheduled_at", "sent_at", mode="before")
+    @classmethod
+    def mark_recipient_datetimes_as_utc(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+
+class CampaignResponse(BaseModel):
+    id: str
+    workspace_id: str
+    name: str
+    subject: str
+    body: str
+    scheduled_at: datetime
+    original_timezone: str
+    interval_minutes: int
+    status: Literal["scheduled", "in_progress", "completed", "partial_failure", "cancelled"]
+    recipient_count: int
+    status_counts: dict[str, int]
+    recipients: list[CampaignRecipientResponse]
+    created_at: datetime
+
+    @field_validator("scheduled_at", "created_at", mode="before")
+    @classmethod
+    def mark_campaign_datetimes_as_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
