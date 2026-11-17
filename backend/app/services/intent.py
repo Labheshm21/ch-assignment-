@@ -145,7 +145,9 @@ def parse_email_intent(message: str, user_timezone: str) -> ParsedEmailIntent:
             },
         ],
         temperature=0,
-        max_tokens=1_000,
+        max_tokens=2_000,
+        reasoning_effort="low",
+        response_format={"type": "json_object"},
     )
     content = response.choices[0].message.content
     if not content:
