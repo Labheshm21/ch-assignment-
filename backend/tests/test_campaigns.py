@@ -285,3 +285,39 @@ def test_reply_stops_only_that_recipient_pending_followups() -> None:
         assert response.recipients[0].sequence_status == "replied"
         assert [delivery.status for delivery in response.recipients[0].deliveries] == ["sent", "cancelled"]
         assert [delivery.status for delivery in response.recipients[1].deliveries] == ["pending", "pending"]
+
+
+def test_reply_is_recorded_after_single_step_sequence_completed() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact = add_contact(db, workspace.id, "ada@example.com", "Ada")
+        db.commit()
+        campaign = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=CampaignCreateRequest(
+                name="Completed reply",
+                contact_ids=[contact.id],
+                subject="Hello",
+                body="First",
+                scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                timezone="UTC",
+            ),
+        )
+        recipient = campaign.recipients[0]
+        recipient.scheduled_email.status = EmailStatus.sent.value
+        recipient.sequence_state.status = "completed"
+
+        cancelled = mark_recipient_replied(
+            db,
+            recipient_id=recipient.id,
+            replied_at=datetime.now(timezone.utc),
+        )
+
+        assert cancelled == 0
+        assert recipient.sequence_state.status == "replied"
+        assert recipient.scheduled_email.status == EmailStatus.sent.value

@@ -320,7 +320,7 @@ def mark_recipient_replied(
 ) -> int:
     """Stop one enrollment and cancel every follow-up that has not started sending."""
     state = db.get(CampaignRecipientState, recipient_id)
-    if state is None or state.status != "active":
+    if state is None or state.status not in {"active", "completed"}:
         return 0
     state.status = "replied"
     state.replied_at = replied_at

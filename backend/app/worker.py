@@ -218,13 +218,13 @@ def process_job(job_id: str) -> None:
 
 
 def sync_one_campaign_reply() -> bool:
-    """Poll one active Gmail thread and stop that recipient's remaining sequence on reply."""
+    """Poll one sent Gmail thread and record a recipient reply."""
     with SessionLocal() as db:
         check_before = datetime.now(timezone.utc) - timedelta(seconds=30)
         state = db.execute(
             select(CampaignRecipientState)
             .where(
-                CampaignRecipientState.status == "active",
+                CampaignRecipientState.status.in_(["active", "completed"]),
                 CampaignRecipientState.gmail_thread_id.is_not(None),
                 or_(
                     CampaignRecipientState.last_checked_at.is_(None),
