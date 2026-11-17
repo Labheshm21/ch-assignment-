@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_, select
 
 from .config import get_settings
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
 from .models import (
     CampaignDelivery,
     CampaignDeliveryThread,
@@ -265,7 +265,6 @@ def sync_one_campaign_reply() -> bool:
 
 def run_forever() -> None:
     settings = get_settings()
-    Base.metadata.create_all(bind=engine)
     logger.info("Worker started; polling every %s seconds", settings.worker_poll_seconds)
     while True:
         job_id = claim_due_job()

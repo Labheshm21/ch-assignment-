@@ -80,6 +80,14 @@ Never commit `.env` or real OAuth tokens.
 
 ## 3. Run with Docker Compose
 
+If this database was created by an older Relay version, record its existing schema once before starting the new stack:
+
+```powershell
+docker compose run --rm migrate alembic stamp head
+```
+
+Skip that command for a fresh database. Compose automatically applies pending migrations whenever the stack starts.
+
 ```powershell
 docker compose up --build
 ```
@@ -94,6 +102,9 @@ The default `.env.example` uses SQLite, which is convenient for a quick local ru
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
+Set-Location backend
+alembic upgrade head
+Set-Location ..
 ```
 
 Terminal 1:

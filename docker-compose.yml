@@ -15,6 +15,18 @@ services:
       timeout: 5s
       retries: 10
 
+  migrate:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://chronos:chronos@db:5432/chronos
+    command: alembic upgrade head
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: ./backend
     env_file: .env
@@ -26,8 +38,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build: ./backend
@@ -38,8 +50,8 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build: ./frontend

@@ -1,5 +1,4 @@
 import logging
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import get_settings
-from .database import Base, engine, get_db
+from .database import get_db
 from .models import (
     Contact,
     EmailStatus,
@@ -63,13 +62,7 @@ settings = get_settings()
 logger = logging.getLogger("chronos-api")
 
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    yield
-
-
-app = FastAPI(title="Relay AI API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Relay AI API", version="0.2.0")
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.app_secret_key,
