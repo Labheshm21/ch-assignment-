@@ -138,7 +138,8 @@ textarea::placeholder { color: #aaa9a3; }
 .contact-details > span { color: #8a8c86; font-size: 10px; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .tag-row span { padding: 3px 6px; border-radius: 999px; background: #ebe8df; color: #666860; font-size: 8px; font-weight: 800; text-transform: uppercase; }
-.contact-row-actions { display: flex; gap: 5px; }
+.contact-row-actions { display: flex; align-items: center; gap: 5px; }
+.contact-row-actions select { max-width: 112px; padding: 5px 22px 5px 7px; border: 1px solid var(--line); border-radius: 7px; color: #555952; background: #fff; font-size: 9px; text-transform: capitalize; }
 .contact-row-actions button { padding: 5px 7px; border: 0; background: transparent; color: #666961; font-size: 9px; cursor: pointer; }
 .contact-row-actions button:hover { text-decoration: underline; }
 .contact-row-actions button.danger { color: #9a4a38; }
@@ -191,6 +192,8 @@ textarea::placeholder { color: #aaa9a3; }
 .campaign-contact { display: grid; grid-template-columns: 17px 36px minmax(0, 1fr); align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .campaign-contact:last-child { border-bottom: 0; }
 .campaign-contact:hover, .campaign-contact.selected { background: rgba(215,255,85,.12); }
+.campaign-contact.blocked { opacity: .52; cursor: not-allowed; }
+.campaign-contact.blocked:hover { background: transparent; }
 .campaign-contact input { accent-color: #7b941d; }
 .campaign-contact > span:last-child { min-width: 0; display: grid; gap: 3px; }
 .campaign-contact strong, .campaign-contact small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

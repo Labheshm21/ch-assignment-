@@ -5,12 +5,69 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Contact, User, Workspace, WorkspaceMember
+from ..models import (
+    CAMPAIGN_BLOCKED_CONTACT_STAGES,
+    CampaignDelivery,
+    CampaignRecipient,
+    CampaignRecipientState,
+    Contact,
+    EmailStatus,
+    ScheduledEmail,
+    User,
+    Workspace,
+    WorkspaceMember,
+)
 from ..schemas import ContactImportError, ContactImportResponse, ContactUpsertRequest
 
 
 def normalize_email(email: str) -> str:
     return email.strip().casefold()
+
+
+def contact_campaign_blocked(contact: Contact) -> bool:
+    return contact.stage in CAMPAIGN_BLOCKED_CONTACT_STAGES
+
+
+def set_contact_stage(db: Session, *, contact: Contact, stage: str) -> int:
+    contact.stage = stage
+    if not contact_campaign_blocked(contact):
+        db.flush()
+        return 0
+
+    recipient_ids = list(
+        db.execute(
+            select(CampaignRecipient.id).where(CampaignRecipient.contact_id == contact.id)
+        ).scalars()
+    )
+    if not recipient_ids:
+        db.flush()
+        return 0
+
+    states = db.execute(
+        select(CampaignRecipientState).where(
+            CampaignRecipientState.campaign_recipient_id.in_(recipient_ids),
+            CampaignRecipientState.status == "active",
+        )
+    ).scalars()
+    for state in states:
+        state.status = "cancelled"
+
+    pending_jobs = db.execute(
+        select(ScheduledEmail)
+        .join(CampaignDelivery, CampaignDelivery.scheduled_email_id == ScheduledEmail.id)
+        .where(
+            CampaignDelivery.campaign_recipient_id.in_(recipient_ids),
+            ScheduledEmail.status == EmailStatus.pending.value,
+        )
+    ).scalars()
+    cancelled = 0
+    reason = stage.replace("_", " ")
+    for pending_job in pending_jobs:
+        pending_job.status = EmailStatus.cancelled.value
+        pending_job.last_error = f"Cancelled because contact was marked {reason}"
+        cancelled += 1
+    db.flush()
+    return cancelled
 
 
 def get_or_create_personal_workspace(db: Session, user: User) -> Workspace:

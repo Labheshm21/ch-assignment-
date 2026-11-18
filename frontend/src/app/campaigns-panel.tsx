@@ -4,12 +4,16 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
 
+type ContactStage = "new" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
+
 type Contact = {
   id: string;
   name: string | null;
   email: string;
   company: string | null;
   job_title: string | null;
+  stage: ContactStage;
+  active_campaign_name: string | null;
   tags: string[];
 };
 
@@ -98,6 +102,9 @@ function statusLabel(status: Campaign["status"]): string {
 
 const templateVariables = ["first_name", "name", "email", "company", "job_title"] as const;
 const emptyStep = (): StepDraft => ({ subject: "", body: "", delay_minutes: 0 });
+const blockedStages = new Set<ContactStage>(["replied", "interested", "not_interested", "meeting", "won", "unsubscribed"]);
+const contactIsBlocked = (contact: Contact) => Boolean(contact.active_campaign_name) || blockedStages.has(contact.stage);
+const stageLabel = (stage: ContactStage) => stage.replaceAll("_", " ");
 
 function contactValues(contact: Contact): Record<string, string> {
   return {
@@ -141,6 +148,8 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
         api<Campaign[]>("/api/campaigns"),
       ]);
       setContacts(availableContacts);
+      const eligibleIds = new Set(availableContacts.filter((contact) => !contactIsBlocked(contact)).map((contact) => contact.id));
+      setSelected((current) => new Set(Array.from(current).filter((contactId) => eligibleIds.has(contactId))));
       setCampaigns(workspaceCampaigns);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load campaigns");
@@ -160,11 +169,15 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
     const needle = search.trim().toLocaleLowerCase();
     if (!needle) return contacts;
     return contacts.filter((contact) =>
-      [contact.name, contact.email, contact.company, ...contact.tags]
+      [contact.name, contact.email, contact.company, contact.active_campaign_name, ...contact.tags]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(needle)),
     );
   }, [contacts, search]);
+  const eligibleVisibleContacts = useMemo(
+    () => visibleContacts.filter((contact) => !contactIsBlocked(contact)),
+    [visibleContacts],
+  );
 
   const previewContact = useMemo(
     () => contacts.find((contact) => selected.has(contact.id)) || null,
@@ -190,6 +203,8 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
   }
 
   function toggleContact(contactId: string) {
+    const contact = contacts.find((item) => item.id === contactId);
+    if (!contact || contactIsBlocked(contact)) return;
     if (!selected.has(contactId) && selected.size >= 100) {
       setError("A campaign can include up to 100 recipients.");
       return;
@@ -205,11 +220,11 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
   function toggleVisible() {
     setSelected((current) => {
       const next = new Set(current);
-      const allVisibleSelected = visibleContacts.length > 0 && visibleContacts.every((contact) => next.has(contact.id));
+      const allVisibleSelected = eligibleVisibleContacts.length > 0 && eligibleVisibleContacts.every((contact) => next.has(contact.id));
       if (allVisibleSelected) {
-        visibleContacts.forEach((contact) => next.delete(contact.id));
+        eligibleVisibleContacts.forEach((contact) => next.delete(contact.id));
       } else {
-        visibleContacts
+        eligibleVisibleContacts
           .filter((contact) => !next.has(contact.id))
           .slice(0, Math.max(0, 100 - next.size))
           .forEach((contact) => next.add(contact.id));
@@ -319,15 +334,15 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
         <section className="campaign-contacts">
           <div className="campaign-contacts-head">
             <div><p className="eyebrow dark">RECIPIENTS</p><h3>Select contacts</h3></div>
-            <button type="button" onClick={toggleVisible}>{visibleContacts.length > 0 && visibleContacts.every((contact) => selected.has(contact.id)) ? "Clear visible" : "Select visible"}</button>
+            <button type="button" onClick={toggleVisible}>{eligibleVisibleContacts.length > 0 && eligibleVisibleContacts.every((contact) => selected.has(contact.id)) ? "Clear visible" : "Select visible"}</button>
           </div>
           <input className="campaign-search" aria-label="Search campaign contacts" value={search} placeholder="Search contacts…" onChange={(event) => setSearch(event.target.value)} />
           <div className="campaign-contact-list">
             {visibleContacts.length === 0 ? <div className="small-empty"><strong>No contacts found</strong><span>Add contacts in this workspace first.</span></div> : visibleContacts.map((contact) => (
-              <label className={`campaign-contact ${selected.has(contact.id) ? "selected" : ""}`} key={contact.id}>
-                <input type="checkbox" checked={selected.has(contact.id)} disabled={!selected.has(contact.id) && selected.size >= 100} onChange={() => toggleContact(contact.id)} />
+              <label className={`campaign-contact ${selected.has(contact.id) ? "selected" : ""} ${contactIsBlocked(contact) ? "blocked" : ""}`} key={contact.id}>
+                <input type="checkbox" checked={selected.has(contact.id)} disabled={contactIsBlocked(contact) || (!selected.has(contact.id) && selected.size >= 100)} onChange={() => toggleContact(contact.id)} />
                 <span className="contact-initial">{(contact.name || contact.email).charAt(0).toUpperCase()}</span>
-                <span><strong>{contact.name || "Unnamed contact"}</strong><small>{contact.email}{contact.company ? ` · ${contact.company}` : ""}</small></span>
+                <span><strong>{contact.name || "Unnamed contact"}</strong><small>{contact.email}{contact.company ? ` · ${contact.company}` : ""} · {contact.active_campaign_name ? `Active in ${contact.active_campaign_name}` : stageLabel(contact.stage)}</small></span>
               </label>
             ))}
           </div>

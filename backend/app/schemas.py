@@ -129,6 +129,23 @@ class ContactUpsertRequest(BaseModel):
         return unique
 
 
+ContactStageValue = Literal[
+    "new",
+    "contacted",
+    "replied",
+    "interested",
+    "not_interested",
+    "meeting",
+    "won",
+    "lost",
+    "unsubscribed",
+]
+
+
+class ContactStageUpdateRequest(BaseModel):
+    stage: ContactStageValue
+
+
 class ContactResponse(BaseModel):
     id: str
     workspace_id: str
@@ -136,6 +153,8 @@ class ContactResponse(BaseModel):
     email: str
     company: str | None
     job_title: str | None
+    stage: ContactStageValue
+    active_campaign_name: str | None = None
     tags: list[str]
     created_at: datetime
     updated_at: datetime

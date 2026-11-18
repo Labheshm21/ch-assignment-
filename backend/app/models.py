@@ -20,6 +20,30 @@ class EmailStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class ContactStage(str, enum.Enum):
+    new = "new"
+    contacted = "contacted"
+    replied = "replied"
+    interested = "interested"
+    not_interested = "not_interested"
+    meeting = "meeting"
+    won = "won"
+    lost = "lost"
+    unsubscribed = "unsubscribed"
+
+
+CAMPAIGN_BLOCKED_CONTACT_STAGES = frozenset(
+    {
+        ContactStage.replied.value,
+        ContactStage.interested.value,
+        ContactStage.not_interested.value,
+        ContactStage.meeting.value,
+        ContactStage.won.value,
+        ContactStage.unsubscribed.value,
+    }
+)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -89,6 +113,9 @@ class Contact(Base):
     normalized_email: Mapped[str] = mapped_column(String(320))
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
     job_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stage: Mapped[str] = mapped_column(
+        String(24), default=ContactStage.new.value, server_default=ContactStage.new.value
+    )
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

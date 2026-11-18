@@ -72,6 +72,7 @@ def test_upsert_uses_case_insensitive_email_without_erasing_missing_fields() -> 
         assert second.name == "Ada Lovelace"
         assert second.company == "Analytical Engines"
         assert second.job_title == "CEO"
+        assert second.stage == "new"
         assert second.tags == ["Founder"]
 
 

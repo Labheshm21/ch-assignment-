@@ -11,12 +11,15 @@ from .models import (
     CampaignDeliveryThread,
     CampaignRecipient,
     CampaignRecipientState,
+    Contact,
+    ContactStage,
     EmailStatus,
     ScheduledEmail,
     User,
 )
 from .services.gmail import find_reply_in_thread, send_gmail_message
 from .services.campaigns import mark_recipient_replied
+from .services.contacts import contact_campaign_blocked, set_contact_stage
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -106,6 +109,16 @@ def process_job(job_id: str) -> None:
             if delivery is not None
             else None
         )
+        recipient = (
+            db.get(CampaignRecipient, delivery.campaign_recipient_id)
+            if delivery is not None
+            else None
+        )
+        contact = (
+            db.get(Contact, recipient.contact_id)
+            if recipient is not None and recipient.contact_id is not None
+            else None
+        )
         if state is not None and state.status != "active":
             job.status = EmailStatus.cancelled.value
             job.locked_at = None
@@ -120,7 +133,6 @@ def process_job(job_id: str) -> None:
             return
 
         if delivery is not None and state is not None and delivery.step_position > 0:
-            recipient = db.get(CampaignRecipient, delivery.campaign_recipient_id)
             try:
                 replied_at = (
                     find_recipient_reply(db, user=user, recipient=recipient)
@@ -140,6 +152,16 @@ def process_job(job_id: str) -> None:
                 job.status = EmailStatus.cancelled.value
                 job.locked_at = None
                 job.last_error = "Cancelled automatically after recipient reply"
+                db.commit()
+                return
+
+        if contact is not None:
+            db.refresh(contact, attribute_names=["stage"])
+            if contact_campaign_blocked(contact):
+                set_contact_stage(db, contact=contact, stage=contact.stage)
+                job.status = EmailStatus.cancelled.value
+                job.locked_at = None
+                job.last_error = f"Contact is not eligible for campaigns: {contact.stage.replace('_', ' ')}"
                 db.commit()
                 return
 
@@ -189,6 +211,8 @@ def process_job(job_id: str) -> None:
         job.sent_at = datetime.now(timezone.utc)
         job.locked_at = None
         job.last_error = None
+        if contact is not None and contact.stage == ContactStage.new.value:
+            contact.stage = ContactStage.contacted.value
         if state is not None:
             state.gmail_thread_id = state.gmail_thread_id or send_result.thread_id
             if delivery is not None and send_result.thread_id is not None:

@@ -15,6 +15,7 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Workspace-scoped contact management with manual add, edit, search, delete, CSV import, and CSV export
 - Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
 - Workspace-scoped multi-step campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, per-step status tracking, and automatic stop-on-reply
+- Contact lifecycle stages with automatic contacted/replied updates, campaign suppression, and one active sequence per contact
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
 - Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
@@ -183,7 +184,7 @@ For a larger production system, move PostgreSQL to RDS, place API/worker contain
 
 ## Current scope
 
-Attachments, voice input, recurring calendar rules, team invitations, unsubscribe handling, and reply classification remain outside this milestone. Campaigns support up to ten personalized steps, an optional interval between recipients, cumulative delays between steps, and deterministic Gmail-thread reply detection that cancels pending follow-ups for that recipient. Supported template variables are `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, and `{{job_title}}`.
+Attachments, voice input, recurring calendar rules, team invitations, public unsubscribe links, and automatic reply classification remain outside this milestone. Campaigns support up to ten personalized steps, an optional interval between recipients, cumulative delays between steps, and deterministic Gmail-thread reply detection that cancels pending follow-ups for that contact. Supported template variables are `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, and `{{job_title}}`.
 
 ## Safety notes
 

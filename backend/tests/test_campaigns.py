@@ -6,16 +6,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import CampaignDelivery, CampaignRecipient, Contact, EmailStatus, ScheduledEmail, User, Workspace, WorkspaceMember
+from app.models import (
+    CampaignDelivery,
+    CampaignRecipient,
+    Contact,
+    ContactStage,
+    EmailStatus,
+    ScheduledEmail,
+    User,
+    Workspace,
+    WorkspaceMember,
+)
 from app.schemas import CampaignCreateRequest, CampaignStepRequest
 from app.services.campaigns import (
+    active_campaign_names,
     cancel_campaign,
     create_campaign,
     mark_recipient_replied,
     render_contact_template,
     serialize_campaign,
 )
-from app.services.contacts import get_or_create_personal_workspace
+from app.services.contacts import get_or_create_personal_workspace, set_contact_stage
 
 
 def make_engine():
@@ -115,6 +126,103 @@ def test_create_campaign_rejects_contacts_from_another_workspace() -> None:
             )
 
         assert db.scalar(select(func.count()).select_from(ScheduledEmail)) == 0
+
+
+def test_contact_can_join_only_one_active_campaign_at_a_time() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact = add_contact(db, workspace.id, "ada@example.com", "Ada")
+        db.commit()
+        request = CampaignCreateRequest(
+            name="First campaign",
+            contact_ids=[contact.id],
+            subject="Hello",
+            body="First",
+            scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            timezone="UTC",
+        )
+        first = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=request,
+        )
+
+        assert active_campaign_names(db, [contact.id]) == {contact.id: "First campaign"}
+        with pytest.raises(ValueError, match="already active.*First campaign"):
+            create_campaign(
+                db,
+                user_id=user.id,
+                workspace_id=workspace.id,
+                request=request.model_copy(update={"name": "Overlapping campaign"}),
+            )
+
+        first.recipients[0].sequence_state.status = "completed"
+        db.commit()
+        second = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=request.model_copy(update={"name": "Later campaign"}),
+        )
+
+        assert second.name == "Later campaign"
+
+
+def test_blocked_contact_cannot_join_campaign_and_pending_steps_are_cancelled() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact = add_contact(db, workspace.id, "ada@example.com", "Ada")
+        db.commit()
+        campaign = create_campaign(
+            db,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            request=CampaignCreateRequest(
+                name="Suppression test",
+                contact_ids=[contact.id],
+                steps=[
+                    CampaignStepRequest(subject="Hello", body="First", delay_minutes=0),
+                    CampaignStepRequest(subject="Follow-up", body="Second", delay_minutes=60),
+                ],
+                scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                timezone="UTC",
+            ),
+        )
+
+        cancelled = set_contact_stage(
+            db,
+            contact=contact,
+            stage=ContactStage.not_interested.value,
+        )
+        db.commit()
+
+        assert cancelled == 2
+        assert campaign.recipients[0].sequence_state.status == "cancelled"
+        assert [delivery.scheduled_email.status for delivery in campaign.recipients[0].deliveries] == [
+            "cancelled",
+            "cancelled",
+        ]
+        with pytest.raises(ValueError, match="not eligible"):
+            create_campaign(
+                db,
+                user_id=user.id,
+                workspace_id=workspace.id,
+                request=CampaignCreateRequest(
+                    name="Blocked campaign",
+                    contact_ids=[contact.id],
+                    subject="Hello",
+                    body="Should not send",
+                    scheduled_at=datetime.now(timezone.utc) + timedelta(hours=2),
+                    timezone="UTC",
+                ),
+            )
 
 
 def test_campaign_status_tracks_each_recipient_and_cancels_only_pending_jobs() -> None:
@@ -282,6 +390,7 @@ def test_reply_stops_only_that_recipient_pending_followups() -> None:
         response = serialize_campaign(campaign)
 
         assert cancelled == 1
+        assert first.stage == ContactStage.replied.value
         assert response.recipients[0].sequence_status == "replied"
         assert [delivery.status for delivery in response.recipients[0].deliveries] == ["sent", "cancelled"]
         assert [delivery.status for delivery in response.recipients[1].deliveries] == ["pending", "pending"]
@@ -319,5 +428,6 @@ def test_reply_is_recorded_after_single_step_sequence_completed() -> None:
         )
 
         assert cancelled == 0
+        assert contact.stage == ContactStage.replied.value
         assert recipient.sequence_state.status == "replied"
         assert recipient.scheduled_email.status == EmailStatus.sent.value

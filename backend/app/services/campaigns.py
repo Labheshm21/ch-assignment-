@@ -13,6 +13,7 @@ from ..models import (
     CampaignRecipientState,
     CampaignStep,
     Contact,
+    ContactStage,
     EmailStatus,
     ScheduledEmail,
     WorkspaceScheduledEmail,
@@ -24,11 +25,35 @@ from ..schemas import (
     CampaignResponse,
     CampaignStepResponse,
 )
+from .contacts import contact_campaign_blocked, set_contact_stage
 from .scheduling import expand_schedule, to_utc
 
 
 TEMPLATE_VARIABLE_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 SUPPORTED_TEMPLATE_VARIABLES = {"first_name", "name", "email", "company", "job_title"}
+
+
+def active_campaign_names(db: Session, contact_ids: list[str]) -> dict[str, str]:
+    if not contact_ids:
+        return {}
+    rows = db.execute(
+        select(CampaignRecipient.contact_id, Campaign.name)
+        .join(
+            CampaignRecipientState,
+            CampaignRecipientState.campaign_recipient_id == CampaignRecipient.id,
+        )
+        .join(Campaign, Campaign.id == CampaignRecipient.campaign_id)
+        .where(
+            CampaignRecipient.contact_id.in_(contact_ids),
+            CampaignRecipientState.status == "active",
+        )
+        .order_by(Campaign.created_at)
+    ).all()
+    active: dict[str, str] = {}
+    for contact_id, campaign_name in rows:
+        if contact_id is not None:
+            active.setdefault(contact_id, campaign_name)
+    return active
 
 
 def contact_template_values(contact: Contact) -> dict[str, str]:
@@ -72,13 +97,24 @@ def create_campaign(
             select(Contact).where(
                 Contact.workspace_id == workspace_id,
                 Contact.id.in_(request.contact_ids),
-            )
+            ).with_for_update()
         ).scalars()
     )
     contacts_by_id = {contact.id: contact for contact in contacts}
     missing = [contact_id for contact_id in request.contact_ids if contact_id not in contacts_by_id]
     if missing:
         raise ValueError("One or more selected contacts do not belong to this workspace")
+    blocked = [contact.email for contact in contacts if contact_campaign_blocked(contact)]
+    if blocked:
+        raise ValueError(f"These contacts are not eligible for campaigns: {', '.join(blocked)}")
+    active = active_campaign_names(db, request.contact_ids)
+    if active:
+        conflicts = [
+            f"{contacts_by_id[contact_id].email} ({active[contact_id]})"
+            for contact_id in request.contact_ids
+            if contact_id in active
+        ]
+        raise ValueError(f"These contacts are already active in another campaign: {', '.join(conflicts)}")
 
     steps = request.steps or []
     rendered_messages: dict[tuple[str, int], tuple[str, str]] = {}
@@ -324,6 +360,15 @@ def mark_recipient_replied(
         return 0
     state.status = "replied"
     state.replied_at = replied_at
+    recipient = db.get(CampaignRecipient, recipient_id)
+    if recipient is not None and recipient.contact_id is not None:
+        contact = db.get(Contact, recipient.contact_id)
+        if contact is not None:
+            return set_contact_stage(
+                db,
+                contact=contact,
+                stage=ContactStage.replied.value,
+            )
     pending_jobs = db.execute(
         select(ScheduledEmail)
         .join(CampaignDelivery, CampaignDelivery.scheduled_email_id == ScheduledEmail.id)

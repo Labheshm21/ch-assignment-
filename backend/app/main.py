@@ -28,6 +28,7 @@ from .schemas import (
     ContactImportResponse,
     ContactMutationResponse,
     ContactResponse,
+    ContactStageUpdateRequest,
     ContactUpsertRequest,
     ParseIntentRequest,
     ParsedEmailIntent,
@@ -43,10 +44,12 @@ from .services.contacts import (
     export_contacts_csv,
     get_or_create_personal_workspace,
     import_contacts_csv,
+    set_contact_stage,
     update_contact,
     upsert_contact,
 )
 from .services.campaigns import (
+    active_campaign_names,
     cancel_campaign,
     create_campaign,
     get_campaign,
@@ -315,7 +318,7 @@ def list_contacts(
     search: str | None = Query(default=None, max_length=200),
     workspace: Workspace = Depends(current_workspace),
     db: Session = Depends(get_db),
-) -> list[Contact]:
+) -> list[ContactResponse]:
     statement = select(Contact).where(Contact.workspace_id == workspace.id)
     if search and search.strip():
         needle = f"%{search.strip().casefold()}%"
@@ -327,7 +330,14 @@ def list_contacts(
                 func.lower(Contact.job_title).like(needle),
             )
         )
-    return list(db.execute(statement.order_by(Contact.updated_at.desc())).scalars())
+    contacts = list(db.execute(statement.order_by(Contact.updated_at.desc())).scalars())
+    active = active_campaign_names(db, [contact.id for contact in contacts])
+    return [
+        ContactResponse.model_validate(contact).model_copy(
+            update={"active_campaign_name": active.get(contact.id)}
+        )
+        for contact in contacts
+    ]
 
 
 @app.post("/api/contacts", response_model=ContactMutationResponse)
@@ -396,6 +406,22 @@ def edit_contact(
         update_contact(db, contact=contact, payload=payload)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+@app.patch("/api/contacts/{contact_id}/stage", response_model=ContactResponse)
+def change_contact_stage(
+    contact_id: str,
+    payload: ContactStageUpdateRequest,
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> Contact:
+    contact = db.get(Contact, contact_id)
+    if contact is None or contact.workspace_id != workspace.id:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    set_contact_stage(db, contact=contact, stage=payload.stage)
     db.commit()
     db.refresh(contact)
     return contact

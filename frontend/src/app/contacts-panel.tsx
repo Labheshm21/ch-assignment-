@@ -4,6 +4,8 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useSta
 
 import { API_URL, api } from "@/lib/api";
 
+type ContactStage = "new" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
+
 type Contact = {
   id: string;
   workspace_id: string;
@@ -11,6 +13,7 @@ type Contact = {
   email: string;
   company: string | null;
   job_title: string | null;
+  stage: ContactStage;
   tags: string[];
   created_at: string;
   updated_at: string;
@@ -33,6 +36,8 @@ type ContactForm = {
 };
 
 const emptyForm: ContactForm = { name: "", email: "", company: "", job_title: "", tags: "" };
+const stageOptions: ContactStage[] = ["new", "contacted", "replied", "interested", "not_interested", "meeting", "won", "lost", "unsubscribed"];
+const stageLabel = (stage: ContactStage) => stage.replaceAll("_", " ");
 
 export default function ContactsPanel({ connected, workspaceId }: { connected: boolean; workspaceId: string | null }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -40,6 +45,7 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [stageUpdatingId, setStageUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -54,8 +60,18 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
   }, [connected, workspaceId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refresh(), 0);
-    return () => window.clearTimeout(timer);
+    const refreshContacts = () => void refresh();
+    const initial = window.setTimeout(refreshContacts, 0);
+    const interval = window.setInterval(refreshContacts, 10_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshContacts();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [refresh]);
 
   const visibleContacts = useMemo(() => {
@@ -136,6 +152,24 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete contact");
+    }
+  }
+
+  async function changeStage(contact: Contact, stage: ContactStage) {
+    setStageUpdatingId(contact.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api<Contact>(`/api/contacts/${contact.id}/stage`, {
+        method: "PATCH",
+        body: JSON.stringify({ stage }),
+      });
+      setContacts((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setNotice(`${contact.name || contact.email} moved to ${stageLabel(stage)}.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update contact stage");
+    } finally {
+      setStageUpdatingId(null);
     }
   }
 
@@ -263,6 +297,9 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
                     {contact.tags.length > 0 && <div className="tag-row">{contact.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
                   </div>
                   <div className="contact-row-actions">
+                    <select aria-label={`Stage for ${contact.name || contact.email}`} value={contact.stage} disabled={stageUpdatingId === contact.id} onChange={(event) => void changeStage(contact, event.target.value as ContactStage)}>
+                      {stageOptions.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}
+                    </select>
                     <button type="button" onClick={() => startEditing(contact)}>Edit</button>
                     <button className="danger" type="button" onClick={() => void removeContact(contact)}>Delete</button>
                   </div>
