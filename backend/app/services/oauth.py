@@ -1,6 +1,8 @@
 import os
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
 from ..config import get_settings
@@ -53,7 +55,20 @@ def build_oauth_flow(
     return flow
 
 
-def serialize_credentials(credentials) -> dict:
+def credentials_from_payload(payload: dict) -> Credentials:
+    values = dict(payload)
+    if isinstance(values.get("expiry"), str):
+        expiry = datetime.fromisoformat(values["expiry"])
+        if expiry.tzinfo is not None:
+            expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
+        values["expiry"] = expiry
+    return Credentials(**values)
+
+
+def serialize_credentials(credentials: Credentials) -> dict:
+    expiry = credentials.expiry
+    if expiry is not None and expiry.tzinfo is not None:
+        expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
     return {
         "token": credentials.token,
         "refresh_token": credentials.refresh_token,
@@ -61,5 +76,6 @@ def serialize_credentials(credentials) -> dict:
         "client_id": credentials.client_id,
         "client_secret": credentials.client_secret,
         "scopes": list(credentials.scopes or GMAIL_SCOPES),
+        "expiry": expiry.isoformat() if expiry is not None else None,
     }
 

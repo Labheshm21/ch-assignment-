@@ -1,4 +1,7 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
+
+from google.oauth2.credentials import Credentials
 
 from app.services import oauth
 
@@ -55,3 +58,22 @@ def test_oauth_flow_preserves_pkce_verifier(monkeypatch) -> None:
     flow = oauth.build_oauth_flow(state="state", code_verifier="verifier")
 
     assert flow.code_verifier == "verifier"
+
+
+def test_credentials_round_trip_expiry() -> None:
+    expiry = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+    credentials = Credentials(
+        token="access-token",
+        refresh_token="refresh-token",
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id="client-id",
+        client_secret="client-secret",
+        scopes=["scope"],
+        expiry=expiry,
+    )
+
+    restored = oauth.credentials_from_payload(oauth.serialize_credentials(credentials))
+
+    assert restored.token == "access-token"
+    assert restored.refresh_token == "refresh-token"
+    assert restored.expiry == expiry.replace(tzinfo=None)

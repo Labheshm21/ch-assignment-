@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator, model_validator
 
 
 class ParsedEmailIntent(BaseModel):
@@ -101,14 +101,44 @@ class ContactUpsertRequest(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     company: str | None = Field(default=None, max_length=200)
     job_title: str | None = Field(default=None, max_length=200)
+    website: HttpUrl | None = None
+    industry: str | None = Field(default=None, max_length=100)
+    company_size: str | None = Field(default=None, max_length=50)
+    lead_source: str | None = Field(default=None, max_length=100)
+    use_case: Literal[
+        "unknown", "generative_video", "gaming", "robotics", "media", "avatars", "other"
+    ] | None = None
+    technical_fit: Literal["unknown", "low", "medium", "high"] | None = None
+    buying_signal: Literal["none", "weak", "medium", "strong"] | None = None
+    research_notes: str | None = Field(default=None, max_length=2_000)
     tags: list[str] | None = Field(default=None, max_length=20)
 
-    @field_validator("name", "company", "job_title", mode="before")
+    @field_validator(
+        "name",
+        "company",
+        "job_title",
+        "industry",
+        "company_size",
+        "lead_source",
+        "research_notes",
+        mode="before",
+    )
     @classmethod
     def clean_optional_text(cls, value: object) -> object:
         if isinstance(value, str):
             cleaned = value.strip()
             return cleaned or None
+        return value
+
+    @field_validator("website", mode="before")
+    @classmethod
+    def normalize_website(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            if "://" not in value:
+                return f"https://{value}"
         return value
 
     @field_validator("tags")
@@ -153,6 +183,19 @@ class ContactResponse(BaseModel):
     email: str
     company: str | None
     job_title: str | None
+    website: str | None
+    industry: str | None
+    company_size: str | None
+    lead_source: str | None
+    use_case: Literal[
+        "unknown", "generative_video", "gaming", "robotics", "media", "avatars", "other"
+    ]
+    technical_fit: Literal["unknown", "low", "medium", "high"]
+    buying_signal: Literal["none", "weak", "medium", "strong"]
+    research_notes: str | None
+    fit_score: int
+    fit_priority: Literal["low", "medium", "high"]
+    fit_reason: str
     stage: ContactStageValue
     active_campaign_name: str | None = None
     tags: list[str]

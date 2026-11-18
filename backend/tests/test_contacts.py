@@ -11,6 +11,7 @@ from app.services.contacts import (
     export_contacts_csv,
     get_or_create_personal_workspace,
     import_contacts_csv,
+    score_contact_fit,
     upsert_contact,
 )
 
@@ -54,6 +55,13 @@ def test_upsert_uses_case_insensitive_email_without_erasing_missing_fields() -> 
                 email="Founder@Example.com",
                 name="Ada Lovelace",
                 company="Analytical Engines",
+                website="analytical.example.com",
+                industry="Artificial Intelligence",
+                company_size="11-50",
+                lead_source="Apollo",
+                use_case="gaming",
+                technical_fit="high",
+                buying_signal="strong",
                 tags=["Founder"],
             ),
         )
@@ -72,6 +80,11 @@ def test_upsert_uses_case_insensitive_email_without_erasing_missing_fields() -> 
         assert second.name == "Ada Lovelace"
         assert second.company == "Analytical Engines"
         assert second.job_title == "CEO"
+        assert second.website == "https://analytical.example.com/"
+        assert second.lead_source == "Apollo"
+        assert second.fit_score == 100
+        assert second.fit_priority == "high"
+        assert "gaming use case +30" in second.fit_reason
         assert second.stage == "new"
         assert second.tags == ["Founder"]
 
@@ -92,10 +105,13 @@ def test_csv_import_adds_updates_and_rejects_rows() -> None:
             db,
             workspace_id=workspace.id,
             content=(
-                "name,email,company,job_title,tags\n"
-                "Ada Lovelace,ada@example.com,Analytical Engines,Founder,VIP\n"
-                "Grace Hopper,grace@example.com,Navy,Admiral,Technical;VIP\n"
-                "Broken,not-an-email,Nowhere,Unknown,\n"
+                "name,email,company,job_title,organization_website_url,industry,"
+                "organization_num_employees,source,use_case,technical_fit,buying_signal,tags\n"
+                "Ada Lovelace,ada@example.com,Analytical Engines,Founder,https://ada.example.com,"
+                "Artificial Intelligence,51,Apollo,generative_video,high,strong,VIP\n"
+                "Grace Hopper,grace@example.com,Navy,Admiral,https://grace.example.com,"
+                "Robotics,500,Clay,robotics,medium,medium,Technical;VIP\n"
+                "Broken,not-an-email,Nowhere,Unknown,,,,,,,,\n"
             ).encode(),
         )
         db.commit()
@@ -107,6 +123,9 @@ def test_csv_import_adds_updates_and_rejects_rows() -> None:
         assert result.errors[0].row == 4
         assert len(contacts) == 2
         assert contacts[0].name == "Ada Lovelace"
+        assert contacts[0].fit_score == 100
+        assert contacts[1].lead_source == "Clay"
+        assert contacts[1].company_size == "500"
         assert contacts[1].tags == ["Technical", "VIP"]
 
 
@@ -117,15 +136,45 @@ def test_csv_export_quotes_values_and_prevents_spreadsheet_formulas() -> None:
         email="jane@example.com",
         company="=RISKY()",
         job_title="Founder",
+        use_case="media",
+        technical_fit="medium",
+        buying_signal="weak",
+        fit_score=40,
+        fit_priority="low",
+        fit_reason="media use case +20",
+        stage="new",
         tags=["VIP", "Technical"],
     )
 
     exported = export_contacts_csv([contact])
 
-    assert exported.startswith("name,email,company,job_title,tags\n")
+    assert exported.startswith("name,email,company,job_title,website,industry,company_size")
     assert '"Doe, Jane"' in exported
     assert "'=RISKY()" in exported
+    assert "media use case +20" in exported
     assert "VIP;Technical" in exported
+
+
+def test_reactor_fit_score_uses_explainable_rules() -> None:
+    score, priority, reason = score_contact_fit(
+        industry="Gaming",
+        use_case="gaming",
+        technical_fit="high",
+        buying_signal="strong",
+    )
+
+    assert score == 100
+    assert priority == "high"
+    assert reason == (
+        "gaming use case +30; high technical fit +30; strong buying signal +25; "
+        "target industry +15"
+    )
+    assert score_contact_fit(
+        industry="Retail",
+        use_case="other",
+        technical_fit="unknown",
+        buying_signal="none",
+    ) == (0, "low", "No qualification signals yet")
 
 
 def test_active_workspace_is_selected_only_from_users_memberships() -> None:

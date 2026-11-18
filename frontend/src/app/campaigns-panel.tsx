@@ -12,6 +12,10 @@ type Contact = {
   email: string;
   company: string | null;
   job_title: string | null;
+  industry: string | null;
+  use_case: string;
+  fit_score: number;
+  fit_priority: "low" | "medium" | "high";
   stage: ContactStage;
   active_campaign_name: string | null;
   tags: string[];
@@ -169,7 +173,7 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
     const needle = search.trim().toLocaleLowerCase();
     if (!needle) return contacts;
     return contacts.filter((contact) =>
-      [contact.name, contact.email, contact.company, contact.active_campaign_name, ...contact.tags]
+      [contact.name, contact.email, contact.company, contact.industry, contact.use_case, contact.fit_priority, contact.active_campaign_name, ...contact.tags]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(needle)),
     );
@@ -342,7 +346,7 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
               <label className={`campaign-contact ${selected.has(contact.id) ? "selected" : ""} ${contactIsBlocked(contact) ? "blocked" : ""}`} key={contact.id}>
                 <input type="checkbox" checked={selected.has(contact.id)} disabled={contactIsBlocked(contact) || (!selected.has(contact.id) && selected.size >= 100)} onChange={() => toggleContact(contact.id)} />
                 <span className="contact-initial">{(contact.name || contact.email).charAt(0).toUpperCase()}</span>
-                <span><strong>{contact.name || "Unnamed contact"}</strong><small>{contact.email}{contact.company ? ` · ${contact.company}` : ""} · {contact.active_campaign_name ? `Active in ${contact.active_campaign_name}` : stageLabel(contact.stage)}</small></span>
+                <span><strong>{contact.name || "Unnamed contact"}</strong><small>{contact.email}{contact.company ? ` · ${contact.company}` : ""} · {contact.fit_score} {contact.fit_priority} fit · {contact.active_campaign_name ? `Active in ${contact.active_campaign_name}` : stageLabel(contact.stage)}</small></span>
               </label>
             ))}
           </div>

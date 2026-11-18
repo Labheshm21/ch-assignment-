@@ -16,6 +16,7 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
 - Workspace-scoped multi-step campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, per-step status tracking, and automatic stop-on-reply
 - Contact lifecycle stages with automatic contacted/replied updates, campaign suppression, and one active sequence per contact
+- Explainable Reactor-fit scoring with account intelligence, priority filters, and Apollo/Clay-friendly CSV fields
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
 - Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
@@ -156,9 +157,11 @@ Recommended demo sequence:
 Contact imports accept UTF-8 CSV files up to 2 MB and 1,000 rows with these headers:
 
 ```csv
-name,email,company,job_title,tags
-Ada Lovelace,ada@example.com,Analytical Engines,Founder,VIP;Technical
+name,email,company,job_title,website,industry,company_size,lead_source,use_case,technical_fit,buying_signal,research_notes,tags
+Ada Lovelace,ada@example.com,Analytical Engines,Founder,https://example.com,Artificial Intelligence,51-200,Apollo,generative_video,high,strong,Hiring video AI engineers,VIP;Technical
 ```
+
+`use_case` accepts `generative_video`, `gaming`, `robotics`, `media`, `avatars`, `other`, or `unknown`. Technical fit accepts `high`, `medium`, `low`, or `unknown`; buying signal accepts `strong`, `medium`, `weak`, or `none`. Apollo's `organization_website_url` and `organization_num_employees` headers are also recognized.
 
 ## AWS demo deployment
 

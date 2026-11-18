@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -22,6 +23,68 @@ from ..schemas import ContactImportError, ContactImportResponse, ContactUpsertRe
 
 def normalize_email(email: str) -> str:
     return email.strip().casefold()
+
+
+def score_contact_fit(
+    *,
+    industry: str | None,
+    use_case: str,
+    technical_fit: str,
+    buying_signal: str,
+) -> tuple[int, str, str]:
+    score = 0
+    reasons: list[str] = []
+    use_case_points = {
+        "generative_video": 30,
+        "gaming": 30,
+        "robotics": 30,
+        "media": 20,
+        "avatars": 20,
+    }.get(use_case, 0)
+    if use_case_points:
+        score += use_case_points
+        reasons.append(f"{use_case.replace('_', ' ')} use case +{use_case_points}")
+
+    technical_points = {"high": 30, "medium": 15, "low": 5}.get(technical_fit, 0)
+    if technical_points:
+        score += technical_points
+        reasons.append(f"{technical_fit} technical fit +{technical_points}")
+
+    signal_points = {"strong": 25, "medium": 15, "weak": 5}.get(buying_signal, 0)
+    if signal_points:
+        score += signal_points
+        reasons.append(f"{buying_signal} buying signal +{signal_points}")
+
+    industry_text = (industry or "").casefold()
+    industry_tokens = set(re.findall(r"[a-z0-9]+", industry_text))
+    target_industries = (
+        "artificial intelligence",
+        "gaming",
+        "robotics",
+        "media",
+        "entertainment",
+        "video",
+        "animation",
+        "vfx",
+    )
+    if industry_text and (
+        "ai" in industry_tokens or any(keyword in industry_text for keyword in target_industries)
+    ):
+        score += 15
+        reasons.append("target industry +15")
+
+    score = min(score, 100)
+    priority = "high" if score >= 75 else "medium" if score >= 50 else "low"
+    return score, priority, "; ".join(reasons) or "No qualification signals yet"
+
+
+def apply_contact_score(contact: Contact) -> None:
+    contact.fit_score, contact.fit_priority, contact.fit_reason = score_contact_fit(
+        industry=contact.industry,
+        use_case=contact.use_case,
+        technical_fit=contact.technical_fit,
+        buying_signal=contact.buying_signal,
+    )
 
 
 def contact_campaign_blocked(contact: Contact) -> bool:
@@ -113,6 +176,14 @@ def upsert_contact(
             name=payload.name,
             company=payload.company,
             job_title=payload.job_title,
+            website=str(payload.website) if payload.website is not None else None,
+            industry=payload.industry,
+            company_size=payload.company_size,
+            lead_source=payload.lead_source,
+            use_case=payload.use_case or "unknown",
+            technical_fit=payload.technical_fit or "unknown",
+            buying_signal=payload.buying_signal or "none",
+            research_notes=payload.research_notes,
             tags=payload.tags or [],
         )
         db.add(contact)
@@ -124,8 +195,25 @@ def upsert_contact(
             contact.company = payload.company
         if payload.job_title is not None:
             contact.job_title = payload.job_title
+        if payload.website is not None:
+            contact.website = str(payload.website)
+        if payload.industry is not None:
+            contact.industry = payload.industry
+        if payload.company_size is not None:
+            contact.company_size = payload.company_size
+        if payload.lead_source is not None:
+            contact.lead_source = payload.lead_source
+        if payload.use_case is not None:
+            contact.use_case = payload.use_case
+        if payload.technical_fit is not None:
+            contact.technical_fit = payload.technical_fit
+        if payload.buying_signal is not None:
+            contact.buying_signal = payload.buying_signal
+        if payload.research_notes is not None:
+            contact.research_notes = payload.research_notes
         if payload.tags is not None:
             contact.tags = payload.tags
+    apply_contact_score(contact)
     db.flush()
     return contact, created
 
@@ -152,7 +240,16 @@ def update_contact(
     contact.name = payload.name
     contact.company = payload.company
     contact.job_title = payload.job_title
+    contact.website = str(payload.website) if payload.website is not None else None
+    contact.industry = payload.industry
+    contact.company_size = payload.company_size
+    contact.lead_source = payload.lead_source
+    contact.use_case = payload.use_case or "unknown"
+    contact.technical_fit = payload.technical_fit or "unknown"
+    contact.buying_signal = payload.buying_signal or "none"
+    contact.research_notes = payload.research_notes
     contact.tags = payload.tags or []
+    apply_contact_score(contact)
     db.flush()
     return contact
 
@@ -193,6 +290,21 @@ def import_contacts_csv(
                     "name": row.get("name") or None,
                     "company": row.get("company") or None,
                     "job_title": row.get("job_title") or row.get("title") or None,
+                    "website": row.get("website")
+                    or row.get("company_website")
+                    or row.get("company website")
+                    or row.get("organization_website_url")
+                    or None,
+                    "industry": row.get("industry") or None,
+                    "company_size": row.get("company_size")
+                    or row.get("company size")
+                    or row.get("organization_num_employees")
+                    or None,
+                    "lead_source": row.get("lead_source") or row.get("source") or None,
+                    "use_case": row.get("use_case") or None,
+                    "technical_fit": row.get("technical_fit") or None,
+                    "buying_signal": row.get("buying_signal") or None,
+                    "research_notes": row.get("research_notes") or row.get("notes") or None,
                     "tags": [tag.strip() for tag in raw_tags.replace(",", ";").split(";") if tag.strip()]
                     if raw_tags
                     else None,
@@ -216,7 +328,27 @@ def import_contacts_csv(
 def export_contacts_csv(contacts: list[Contact]) -> str:
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\n")
-    writer.writerow(["name", "email", "company", "job_title", "tags"])
+    writer.writerow(
+        [
+            "name",
+            "email",
+            "company",
+            "job_title",
+            "website",
+            "industry",
+            "company_size",
+            "lead_source",
+            "use_case",
+            "technical_fit",
+            "buying_signal",
+            "research_notes",
+            "fit_score",
+            "fit_priority",
+            "fit_reason",
+            "stage",
+            "tags",
+        ]
+    )
     for contact in contacts:
         writer.writerow(
             [
@@ -224,6 +356,18 @@ def export_contacts_csv(contacts: list[Contact]) -> str:
                 _safe_csv_cell(contact.email),
                 _safe_csv_cell(contact.company),
                 _safe_csv_cell(contact.job_title),
+                _safe_csv_cell(contact.website),
+                _safe_csv_cell(contact.industry),
+                _safe_csv_cell(contact.company_size),
+                _safe_csv_cell(contact.lead_source),
+                _safe_csv_cell(contact.use_case),
+                _safe_csv_cell(contact.technical_fit),
+                _safe_csv_cell(contact.buying_signal),
+                _safe_csv_cell(contact.research_notes),
+                contact.fit_score,
+                _safe_csv_cell(contact.fit_priority),
+                _safe_csv_cell(contact.fit_reason),
+                _safe_csv_cell(contact.stage),
                 _safe_csv_cell(";".join(contact.tags)),
             ]
         )

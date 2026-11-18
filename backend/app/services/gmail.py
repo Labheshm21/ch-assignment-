@@ -11,15 +11,16 @@ from sqlalchemy.orm import Session
 
 from ..models import User
 from ..security import CredentialCipher
-from .oauth import serialize_credentials
+from .oauth import credentials_from_payload, serialize_credentials
 
 
 def _credentials_for_user(db: Session, user: User) -> Credentials:
     cipher = CredentialCipher()
     payload = cipher.decrypt(user.google_credentials_encrypted)
-    credentials = Credentials(**payload)
+    had_expiry = bool(payload.get("expiry"))
+    credentials = credentials_from_payload(payload)
 
-    if credentials.expired and credentials.refresh_token:
+    if credentials.refresh_token and (credentials.expired or not had_expiry):
         credentials.refresh(Request())
         user.google_credentials_encrypted = cipher.encrypt(serialize_credentials(credentials))
         db.add(user)

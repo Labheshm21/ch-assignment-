@@ -113,6 +113,21 @@ class Contact(Base):
     normalized_email: Mapped[str] = mapped_column(String(320))
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
     job_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    company_size: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    use_case: Mapped[str] = mapped_column(String(32), default="unknown", server_default="unknown")
+    technical_fit: Mapped[str] = mapped_column(String(16), default="unknown", server_default="unknown")
+    buying_signal: Mapped[str] = mapped_column(String(16), default="none", server_default="none")
+    research_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fit_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    fit_priority: Mapped[str] = mapped_column(String(12), default="low", server_default="low")
+    fit_reason: Mapped[str] = mapped_column(
+        String(500),
+        default="No qualification signals yet",
+        server_default="No qualification signals yet",
+    )
     stage: Mapped[str] = mapped_column(
         String(24), default=ContactStage.new.value, server_default=ContactStage.new.value
     )

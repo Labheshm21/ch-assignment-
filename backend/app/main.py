@@ -328,6 +328,10 @@ def list_contacts(
                 func.lower(Contact.name).like(needle),
                 func.lower(Contact.company).like(needle),
                 func.lower(Contact.job_title).like(needle),
+                func.lower(Contact.website).like(needle),
+                func.lower(Contact.industry).like(needle),
+                func.lower(Contact.lead_source).like(needle),
+                func.lower(Contact.use_case).like(needle),
             )
         )
     contacts = list(db.execute(statement.order_by(Contact.updated_at.desc())).scalars())
