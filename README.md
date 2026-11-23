@@ -17,6 +17,7 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Workspace-scoped multi-step campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, per-step status tracking, and automatic stop-on-reply
 - Contact lifecycle stages with automatic contacted/replied updates, campaign suppression, and one active sequence per contact
 - Explainable Reactor-fit scoring with account intelligence, priority filters, and Apollo/Clay-friendly CSV fields
+- API-key protected, workspace-scoped CSV automation endpoint for n8n and Apollo exports
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
 - Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
@@ -163,6 +164,10 @@ Ada Lovelace,ada@example.com,Analytical Engines,Founder,https://example.com,Arti
 
 `use_case` accepts `generative_video`, `gaming`, `robotics`, `media`, `avatars`, `other`, or `unknown`. Technical fit accepts `high`, `medium`, `low`, or `unknown`; buying signal accepts `strong`, `medium`, `weak`, or `none`. Apollo's `organization_website_url` and `organization_num_employees` headers are also recognized.
 
+For n8n automation, set `AUTOMATION_API_KEY` to a dedicated random secret and `AUTOMATION_WORKSPACE_ID` to the one workspace n8n may update. Send CSV files to `POST /api/automation/workspaces/{workspace_id}/contacts/import` with the key in the `X-Relay-Automation-Key` header. The endpoint reuses the same validation, deduplication, scoring, size, and row limits as manual imports; it never schedules email.
+
+The local Compose stack also runs n8n at `http://localhost:5678`. Import `n8n/workflows/apollo-csv-to-relay.json`, connect a Header Auth credential named `Relay Automation`, and set its header name to `X-Relay-Automation-Key`. The workflow reads the included dummy Apollo export from `/files/samples/apollo-leads.csv`; rerunning it updates the same workspace contacts instead of duplicating them.
+
 ## AWS demo deployment
 
 The fastest take-home deployment uses one EC2 instance with Docker Compose. It runs the Next.js frontend, FastAPI API, background worker, PostgreSQL, and Caddy. Caddy obtains a trusted HTTPS certificate for an `sslip.io` hostname derived from the instance's Elastic IP. PostgreSQL and certificates use persistent Docker volumes on the EC2 EBS disk.
@@ -172,8 +177,8 @@ The fastest take-home deployment uses one EC2 instance with Docker Compose. It r
 3. Install Git and Docker Engine with the Compose plugin.
 4. Clone this repository on the instance.
 5. Copy `.env.production.example` to `.env.production`.
-6. Set `APP_DOMAIN` to `<ELASTIC_IP>.sslip.io` and use the same hostname with `https://` for `FRONTEND_URL` and `BACKEND_URL`.
-7. Fill in fresh application, encryption, Google, NVIDIA, and PostgreSQL secrets.
+6. Set `APP_DOMAIN` to `<ELASTIC_IP>.sslip.io`, `N8N_DOMAIN` to `n8n.<ELASTIC_IP>.sslip.io`, and use the app hostname with `https://` for `FRONTEND_URL` and `BACKEND_URL`.
+7. Fill in fresh application, encryption, Google, NVIDIA, PostgreSQL, automation, and n8n secrets. Set `AUTOMATION_WORKSPACE_ID` to the production Relay workspace that n8n may update.
 8. Start the stack:
 
    ```bash
@@ -182,6 +187,7 @@ The fastest take-home deployment uses one EC2 instance with Docker Compose. It r
 
 9. Add `https://<APP_DOMAIN>/auth/google/callback` to the Google OAuth client's authorized redirect URIs.
 10. Open `https://<APP_DOMAIN>`, connect Gmail, schedule an email, shut down the local computer, and verify delivery.
+11. Open `https://<N8N_DOMAIN>`, create the instance owner, import `n8n/workflows/apollo-csv-to-relay.json`, reconnect its Header Auth credential, and verify the dummy contacts are added once and updated on the second run.
 
 For a larger production system, move PostgreSQL to RDS, place API/worker containers on ECS, and store secrets in Secrets Manager.
 

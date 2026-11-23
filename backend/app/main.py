@@ -1,7 +1,8 @@
 import logging
+from secrets import compare_digest
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from google.oauth2.credentials import Credentials
@@ -109,6 +110,23 @@ def current_workspace(
     db.commit()
     db.refresh(workspace)
     request.session["workspace_id"] = workspace.id
+    return workspace
+
+
+def automation_workspace(
+    workspace_id: str,
+    automation_key: str | None = Header(default=None, alias="X-Relay-Automation-Key"),
+    db: Session = Depends(get_db),
+) -> Workspace:
+    if not settings.automation_api_key or not settings.automation_workspace_id:
+        raise HTTPException(status_code=503, detail="Automation API is not configured")
+    if automation_key is None or not compare_digest(automation_key, settings.automation_api_key):
+        raise HTTPException(status_code=401, detail="Invalid automation key")
+    if workspace_id != settings.automation_workspace_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
 
 
@@ -374,6 +392,18 @@ async def import_contacts(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return result
+
+
+@app.post(
+    "/api/automation/workspaces/{workspace_id}/contacts/import",
+    response_model=ContactImportResponse,
+)
+async def automation_import_contacts(
+    file: UploadFile = File(...),
+    workspace: Workspace = Depends(automation_workspace),
+    db: Session = Depends(get_db),
+) -> ContactImportResponse:
+    return await import_contacts(file=file, workspace=workspace, db=db)
 
 
 @app.get("/api/contacts/export")

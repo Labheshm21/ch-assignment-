@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_model: str = "moonshotai/kimi-k3"
 
+    automation_api_key: str = ""
+    automation_workspace_id: str = ""
+
     worker_poll_seconds: int = Field(default=5, ge=1, le=60)
     worker_lock_timeout_minutes: int = Field(default=5, ge=1, le=60)
 

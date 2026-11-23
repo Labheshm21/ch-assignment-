@@ -9,6 +9,8 @@ x-app-environment: &app-environment
   NVIDIA_API_KEY: ${NVIDIA_API_KEY}
   NVIDIA_BASE_URL: ${NVIDIA_BASE_URL}
   NVIDIA_MODEL: ${NVIDIA_MODEL}
+  AUTOMATION_API_KEY: ${AUTOMATION_API_KEY}
+  AUTOMATION_WORKSPACE_ID: ${AUTOMATION_WORKSPACE_ID}
   WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS}
   WORKER_LOCK_TIMEOUT_MINUTES: ${WORKER_LOCK_TIMEOUT_MINUTES}
 
@@ -69,11 +71,35 @@ services:
     depends_on:
       - api
 
+  n8n:
+    image: n8nio/n8n:2.48.7
+    restart: unless-stopped
+    environment:
+      N8N_HOST: ${N8N_DOMAIN}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      N8N_EDITOR_BASE_URL: https://${N8N_DOMAIN}
+      WEBHOOK_URL: https://${N8N_DOMAIN}/
+      N8N_PROXY_HOPS: 1
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RESTRICT_FILE_ACCESS_TO: /files
+      RELAY_API_URL: http://api:8000
+      RELAY_AUTOMATION_WORKSPACE_ID: ${AUTOMATION_WORKSPACE_ID}
+      GENERIC_TIMEZONE: America/New_York
+      TZ: America/New_York
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/files:ro
+    depends_on:
+      - api
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
+      N8N_DOMAIN: ${N8N_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
@@ -85,8 +111,10 @@ services:
     depends_on:
       - frontend
       - api
+      - n8n
 
 volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  n8n_data:

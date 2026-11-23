@@ -1,0 +1,90 @@
+{
+  "name": "Apollo CSV → Relay",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        -32
+      ],
+      "id": "f156e402-887e-4c01-8b30-cc3c4d19f2b6",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/files/samples/apollo-leads.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -208,
+        -32
+      ],
+      "id": "48d50fff-6c63-44b8-bbb9-1ac320b63508",
+      "name": "Read Apollo CSV"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.RELAY_API_URL + '/api/automation/workspaces/' + $env.RELAY_AUTOMATION_WORKSPACE_ID + '/contacts/import' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        16,
+        -32
+      ],
+      "id": "13196a3a-bfce-49a4-8da9-18c7cfcb00f2",
+      "name": "Import Contacts into Relay"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Apollo CSV": {
+      "main": [
+        [
+          {
+            "node": "Import Contacts into Relay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}

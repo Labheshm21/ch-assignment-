@@ -1,0 +1,3 @@
+name,email,company,job_title,organization_website_url,industry,organization_num_employees,source,use_case,technical_fit,buying_signal,research_notes,tags
+Maya Chen,maya.chen@example.com,Vision Forge,VP Engineering,https://visionforge.example,Artificial Intelligence,75,Apollo,generative_video,high,strong,Building a real-time generative video product,Technical;Priority
+Noah Williams,noah.williams@example.com,Atlas Robotics,Founder,https://atlasrobotics.example,Robotics,28,Apollo,robotics,high,medium,Recently hired a perception engineering team,Founder
