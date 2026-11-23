@@ -29,7 +29,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.RELAY_API_URL + '/api/automation/workspaces/' + $env.RELAY_AUTOMATION_WORKSPACE_ID + '/contacts/import' }}",
+        "url": "http://api:8000/api/automation/workspaces/REPLACE_WITH_WORKSPACE_ID/contacts/import",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

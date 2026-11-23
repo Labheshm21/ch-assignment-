@@ -166,7 +166,7 @@ Ada Lovelace,ada@example.com,Analytical Engines,Founder,https://example.com,Arti
 
 For n8n automation, set `AUTOMATION_API_KEY` to a dedicated random secret and `AUTOMATION_WORKSPACE_ID` to the one workspace n8n may update. Send CSV files to `POST /api/automation/workspaces/{workspace_id}/contacts/import` with the key in the `X-Relay-Automation-Key` header. The endpoint reuses the same validation, deduplication, scoring, size, and row limits as manual imports; it never schedules email.
 
-The local Compose stack also runs n8n at `http://localhost:5678`. Import `n8n/workflows/apollo-csv-to-relay.json`, connect a Header Auth credential named `Relay Automation`, and set its header name to `X-Relay-Automation-Key`. The workflow reads the included dummy Apollo export from `/files/samples/apollo-leads.csv`; rerunning it updates the same workspace contacts instead of duplicating them.
+The local Compose stack also runs n8n at `http://localhost:5678`. Import `n8n/workflows/apollo-csv-to-relay.json`, replace `REPLACE_WITH_WORKSPACE_ID` in the HTTP Request URL, connect a Header Auth credential named `Relay Automation`, and set its header name to `X-Relay-Automation-Key`. The workflow reads the included dummy Apollo export from `/files/samples/apollo-leads.csv`; rerunning it updates the same workspace contacts instead of duplicating them.
 
 ## AWS demo deployment
 
