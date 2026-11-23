@@ -272,6 +272,10 @@ def import_contacts_csv(
     normalized_headers = {header.strip().casefold() for header in reader.fieldnames if header}
     if "email" not in normalized_headers:
         raise ValueError("CSV must include an email column")
+    is_apollo_export = bool(
+        {"apollo contact id", "apollo person id", "company name for emails"}
+        & normalized_headers
+    )
 
     added = 0
     updated = 0
@@ -283,12 +287,18 @@ def import_contacts_csv(
             raise ValueError(f"CSV can contain at most {maximum_rows} contacts")
         row = {(key or "").strip().casefold(): (value or "").strip() for key, value in raw_row.items()}
         raw_tags = row.get("tags", "")
+        full_name = row.get("name") or " ".join(
+            part for part in (row.get("first name"), row.get("last name")) if part
+        ).strip()
         try:
             payload = ContactUpsertRequest.model_validate(
                 {
                     "email": row.get("email", ""),
-                    "name": row.get("name") or None,
-                    "company": row.get("company") or None,
+                    "name": full_name or None,
+                    "company": row.get("company")
+                    or row.get("company name")
+                    or row.get("company name for emails")
+                    or None,
                     "job_title": row.get("job_title") or row.get("title") or None,
                     "website": row.get("website")
                     or row.get("company_website")
@@ -299,8 +309,11 @@ def import_contacts_csv(
                     "company_size": row.get("company_size")
                     or row.get("company size")
                     or row.get("organization_num_employees")
+                    or row.get("# employees")
                     or None,
-                    "lead_source": row.get("lead_source") or row.get("source") or None,
+                    "lead_source": row.get("lead_source")
+                    or row.get("source")
+                    or ("Apollo" if is_apollo_export else None),
                     "use_case": row.get("use_case") or None,
                     "technical_fit": row.get("technical_fit") or None,
                     "buying_signal": row.get("buying_signal") or None,

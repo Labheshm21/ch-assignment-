@@ -12,4 +12,5 @@ htmlcov/
 .next/
 node_modules/
 frontend/.env.local
+n8n/imports/
 

@@ -129,6 +129,34 @@ def test_csv_import_adds_updates_and_rejects_rows() -> None:
         assert contacts[1].tags == ["Technical", "VIP"]
 
 
+def test_csv_import_supports_apollo_export_headers() -> None:
+    with make_session() as db:
+        user = User(email="owner@example.com", google_credentials_encrypted="encrypted")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+
+        result = import_contacts_csv(
+            db,
+            workspace_id=workspace.id,
+            content=(
+                "First Name,Last Name,Title,Company Name,Email,# Employees,Industry,Website,"
+                "Apollo Contact Id\n"
+                "Ada,Lovelace,Founder,Analytical Engines,ada@example.com,42,"
+                "Artificial Intelligence,https://ada.example.com,apollo-123\n"
+            ).encode(),
+        )
+        db.commit()
+
+        contact = db.execute(select(Contact)).scalar_one()
+        assert result.added == 1
+        assert contact.name == "Ada Lovelace"
+        assert contact.company == "Analytical Engines"
+        assert contact.job_title == "Founder"
+        assert contact.company_size == "42"
+        assert contact.lead_source == "Apollo"
+
+
 def test_csv_export_quotes_values_and_prevents_spreadsheet_formulas() -> None:
     contact = Contact(
         workspace_id="workspace-id",
