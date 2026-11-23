@@ -34,6 +34,7 @@ def make_campaign(engine):
             email="ada@example.com",
             normalized_email="ada@example.com",
             name="Ada",
+            stage=ContactStage.qualified.value,
             tags=[],
         )
         db.add(contact)
@@ -57,7 +58,7 @@ def make_campaign(engine):
         return contact.id, job.id
 
 
-def test_successful_campaign_send_marks_new_contact_contacted(monkeypatch) -> None:
+def test_successful_campaign_send_marks_qualified_contact_contacted(monkeypatch) -> None:
     engine = make_engine()
     contact_id, job_id = make_campaign(engine)
     monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine))

@@ -211,7 +211,10 @@ def process_job(job_id: str) -> None:
         job.sent_at = datetime.now(timezone.utc)
         job.locked_at = None
         job.last_error = None
-        if contact is not None and contact.stage == ContactStage.new.value:
+        if contact is not None and contact.stage in {
+            ContactStage.new.value,
+            ContactStage.qualified.value,
+        }:
             contact.stage = ContactStage.contacted.value
         if state is not None:
             state.gmail_thread_id = state.gmail_thread_id or send_result.thread_id

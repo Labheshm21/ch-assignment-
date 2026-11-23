@@ -131,6 +131,7 @@ textarea::placeholder { color: #aaa9a3; }
 .contacts-card-head input { width: 185px; }
 .contact-filters { display: flex; gap: 8px; }
 .contact-filters select { width: 105px; padding: 9px; }
+.contact-filters select:first-child { width: 112px; }
 .contacts-list { max-height: 630px; overflow-y: auto; }
 .contact-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .contact-row:last-child { border-bottom: 0; }
@@ -151,6 +152,8 @@ textarea::placeholder { color: #aaa9a3; }
 .contact-row-actions button { padding: 5px 7px; border: 0; background: transparent; color: #666961; font-size: 9px; cursor: pointer; }
 .contact-row-actions button:hover { text-decoration: underline; }
 .contact-row-actions button.danger { color: #9a4a38; }
+.contact-row-actions button.approve { padding: 6px 8px; border-radius: 7px; color: #415519; background: #e4f4b6; font-weight: 800; text-decoration: none; }
+.contact-row-actions button:disabled { opacity: .45; cursor: wait; }
 .small-empty { display: grid; gap: 6px; padding: 60px 20px; color: #84867f; text-align: center; font-size: 11px; }
 .small-empty strong { color: var(--ink); font: 500 17px Georgia, serif; }
 .contact-empty { margin-top: 28px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,.5); }
@@ -243,6 +246,28 @@ textarea::placeholder { color: #aaa9a3; }
 .delivery-item strong { font-size: 10px; }
 .delivery-item small { color: #858780; font-size: 8px; }
 
+.dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 28px; }
+.dashboard-toolbar p { margin: 0; color: #7d7f79; font-size: 11px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+.metric-grid article { display: grid; gap: 7px; min-height: 132px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.72); box-shadow: 0 16px 42px rgba(40,41,37,.05); }
+.metric-grid span { color: #74766f; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.metric-grid strong { font: 500 38px/1 Georgia, serif; }
+.metric-grid small { align-self: end; color: #858780; font-size: 10px; }
+.funnel-card { margin-top: 20px; padding: 24px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,.72); box-shadow: 0 16px 42px rgba(40,41,37,.05); }
+.funnel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.funnel-head h3 { margin: 0; font: 500 23px/1.2 Georgia, serif; }
+.funnel-head > span { color: #7d7f79; font-size: 10px; }
+.funnel-list { display: grid; gap: 13px; margin-top: 26px; }
+.funnel-row { display: grid; grid-template-columns: 75px minmax(0, 1fr) 35px; align-items: center; gap: 12px; }
+.funnel-row > span { color: #62645e; font-size: 10px; font-weight: 700; }
+.funnel-row > div { height: 11px; overflow: hidden; border-radius: 999px; background: #eceae3; }
+.funnel-row i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b6d73e, var(--lime)); }
+.funnel-row strong { font-size: 11px; text-align: right; }
+.rate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 26px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--line); }
+.rate-grid div { display: grid; gap: 5px; padding: 15px; background: #faf9f4; text-align: center; }
+.rate-grid strong { font: 500 21px Georgia, serif; }
+.rate-grid span { color: #7d7f79; font-size: 9px; text-transform: uppercase; }
+
 @media (max-width: 820px) {
   .app-shell { display: block; }
   .sidebar { position: relative; width: 100%; height: auto; min-height: 360px; gap: 34px; }
@@ -252,6 +277,7 @@ textarea::placeholder { color: #aaa9a3; }
   .cloud-badge { display: none; }
   .contact-grid { grid-template-columns: 1fr; }
   .campaign-builder { grid-template-columns: 1fr; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 520px) {
@@ -264,6 +290,8 @@ textarea::placeholder { color: #aaa9a3; }
   .import-actions { align-items: stretch; }
   .contacts-card-head input, .contact-filters select { width: 100%; }
   .contact-filters { flex-direction: column; }
+  .metric-grid { grid-template-columns: 1fr; }
+  .funnel-head { align-items: flex-start; flex-direction: column; }
   .form-split { grid-template-columns: 1fr; }
   .contact-row { flex-wrap: wrap; }
   .contact-row-actions { width: 100%; justify-content: flex-end; }

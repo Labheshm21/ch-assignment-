@@ -107,6 +107,15 @@ def create_campaign(
     blocked = [contact.email for contact in contacts if contact_campaign_blocked(contact)]
     if blocked:
         raise ValueError(f"These contacts are not eligible for campaigns: {', '.join(blocked)}")
+    unapproved = [
+        contact.email
+        for contact in contacts
+        if contact.stage != ContactStage.qualified.value
+    ]
+    if unapproved:
+        raise ValueError(
+            f"Approve contacts before adding them to a campaign: {', '.join(unapproved)}"
+        )
     active = active_campaign_names(db, request.contact_ids)
     if active:
         conflicts = [

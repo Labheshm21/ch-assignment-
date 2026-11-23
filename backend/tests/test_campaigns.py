@@ -45,6 +45,7 @@ def add_contact(db: Session, workspace_id: str, email: str, name: str) -> Contac
         email=email,
         normalized_email=email.casefold(),
         name=name,
+        stage=ContactStage.qualified.value,
         tags=[],
     )
     db.add(contact)
@@ -120,6 +121,34 @@ def test_create_campaign_rejects_contacts_from_another_workspace() -> None:
                     contact_ids=[outsider.id],
                     subject="Hello",
                     body="No cross-workspace sends",
+                    scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    timezone="UTC",
+                ),
+            )
+
+        assert db.scalar(select(func.count()).select_from(ScheduledEmail)) == 0
+
+
+def test_create_campaign_requires_contact_approval() -> None:
+    with Session(make_engine()) as db:
+        user = User(email="sender@example.com", google_credentials_encrypted="unused")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact = add_contact(db, workspace.id, "ada@example.com", "Ada")
+        contact.stage = ContactStage.new.value
+        db.commit()
+
+        with pytest.raises(ValueError, match="Approve contacts"):
+            create_campaign(
+                db,
+                user_id=user.id,
+                workspace_id=workspace.id,
+                request=CampaignCreateRequest(
+                    name="Needs approval",
+                    contact_ids=[contact.id],
+                    subject="Hello",
+                    body="Should not send",
                     scheduled_at=datetime.now(timezone.utc) + timedelta(hours=1),
                     timezone="UTC",
                 ),

@@ -93,7 +93,7 @@ def contact_campaign_blocked(contact: Contact) -> bool:
 
 def set_contact_stage(db: Session, *, contact: Contact, stage: str) -> int:
     contact.stage = stage
-    if not contact_campaign_blocked(contact):
+    if not contact_campaign_blocked(contact) and stage != ContactStage.new.value:
         db.flush()
         return 0
 

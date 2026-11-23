@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
 
-type ContactStage = "new" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
+type ContactStage = "new" | "qualified" | "rejected" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
 
 type Contact = {
   id: string;
@@ -106,9 +106,8 @@ function statusLabel(status: Campaign["status"]): string {
 
 const templateVariables = ["first_name", "name", "email", "company", "job_title"] as const;
 const emptyStep = (): StepDraft => ({ subject: "", body: "", delay_minutes: 0 });
-const blockedStages = new Set<ContactStage>(["replied", "interested", "not_interested", "meeting", "won", "unsubscribed"]);
-const contactIsBlocked = (contact: Contact) => Boolean(contact.active_campaign_name) || blockedStages.has(contact.stage);
-const stageLabel = (stage: ContactStage) => stage.replaceAll("_", " ");
+const contactIsBlocked = (contact: Contact) => Boolean(contact.active_campaign_name) || contact.stage !== "qualified";
+const stageLabel = (stage: ContactStage) => stage === "new" ? "needs review" : stage.replaceAll("_", " ");
 
 function contactValues(contact: Contact): Record<string, string> {
   return {
@@ -337,7 +336,7 @@ export default function CampaignsPanel({ connected, workspaceId, replyMonitoring
 
         <section className="campaign-contacts">
           <div className="campaign-contacts-head">
-            <div><p className="eyebrow dark">RECIPIENTS</p><h3>Select contacts</h3></div>
+            <div><p className="eyebrow dark">RECIPIENTS</p><h3>Select qualified contacts</h3></div>
             <button type="button" onClick={toggleVisible}>{eligibleVisibleContacts.length > 0 && eligibleVisibleContacts.every((contact) => selected.has(contact.id)) ? "Clear visible" : "Select visible"}</button>
           </div>
           <input className="campaign-search" aria-label="Search campaign contacts" value={search} placeholder="Search contacts…" onChange={(event) => setSearch(event.target.value)} />

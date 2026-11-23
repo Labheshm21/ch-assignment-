@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useSta
 
 import { API_URL, api } from "@/lib/api";
 
-type ContactStage = "new" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
+type ContactStage = "new" | "qualified" | "rejected" | "contacted" | "replied" | "interested" | "not_interested" | "meeting" | "won" | "lost" | "unsubscribed";
 type UseCase = "unknown" | "generative_video" | "gaming" | "robotics" | "media" | "avatars" | "other";
 type TechnicalFit = "unknown" | "low" | "medium" | "high";
 type BuyingSignal = "none" | "weak" | "medium" | "strong";
@@ -63,8 +63,8 @@ const emptyForm: ContactForm = {
   company_size: "", lead_source: "", use_case: "unknown", technical_fit: "unknown",
   buying_signal: "none", research_notes: "", tags: "",
 };
-const stageOptions: ContactStage[] = ["new", "contacted", "replied", "interested", "not_interested", "meeting", "won", "lost", "unsubscribed"];
-const stageLabel = (stage: ContactStage) => stage.replaceAll("_", " ");
+const stageOptions: ContactStage[] = ["new", "qualified", "rejected", "contacted", "replied", "interested", "not_interested", "meeting", "won", "lost", "unsubscribed"];
+const stageLabel = (stage: ContactStage) => stage === "new" ? "needs review" : stage.replaceAll("_", " ");
 
 export default function ContactsPanel({ connected, workspaceId }: { connected: boolean; workspaceId: string | null }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -72,6 +72,7 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | FitPriority>("all");
+  const [reviewFilter, setReviewFilter] = useState<"all" | "new" | "qualified" | "rejected">("all");
   const [loading, setLoading] = useState(false);
   const [stageUpdatingId, setStageUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,12 +106,13 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
   const visibleContacts = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return contacts.filter((contact) =>
+      (reviewFilter === "all" || contact.stage === reviewFilter) &&
       (priorityFilter === "all" || contact.fit_priority === priorityFilter) &&
       (!needle || [contact.name, contact.email, contact.company, contact.job_title, contact.website, contact.industry, contact.lead_source, contact.use_case, contact.fit_priority, ...contact.tags]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(needle))),
     );
-  }, [contacts, priorityFilter, search]);
+  }, [contacts, priorityFilter, reviewFilter, search]);
 
   function updateField(field: keyof ContactForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -339,7 +341,7 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
         <section className="contacts-card">
           <div className="contacts-card-head">
             <div><p className="eyebrow dark">PEOPLE</p><h3>All contacts</h3></div>
-            <div className="contact-filters"><select aria-label="Filter by fit priority" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as "all" | FitPriority)}><option value="all">All fit</option><option value="high">High fit</option><option value="medium">Medium fit</option><option value="low">Low fit</option></select><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search…" /></div>
+            <div className="contact-filters"><select aria-label="Filter by review status" value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value as "all" | "new" | "qualified" | "rejected")}><option value="all">All status</option><option value="new">Review queue</option><option value="qualified">Qualified</option><option value="rejected">Rejected</option></select><select aria-label="Filter by fit priority" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as "all" | FitPriority)}><option value="all">All fit</option><option value="high">High fit</option><option value="medium">Medium fit</option><option value="low">Low fit</option></select><input aria-label="Search contacts" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search…" /></div>
           </div>
           {visibleContacts.length === 0 ? (
             <div className="small-empty"><strong>No contacts found</strong><span>Add someone manually or import a CSV.</span></div>
@@ -357,6 +359,7 @@ export default function ContactsPanel({ connected, workspaceId }: { connected: b
                     {contact.tags.length > 0 && <div className="tag-row">{contact.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
                   </div>
                   <div className="contact-row-actions">
+                    {contact.stage === "new" && <><button className="approve" type="button" disabled={stageUpdatingId === contact.id} onClick={() => void changeStage(contact, "qualified")}>Approve</button><button className="danger" type="button" disabled={stageUpdatingId === contact.id} onClick={() => void changeStage(contact, "rejected")}>Reject</button></>}
                     <select aria-label={`Stage for ${contact.name || contact.email}`} value={contact.stage} disabled={stageUpdatingId === contact.id} onChange={(event) => void changeStage(contact, event.target.value as ContactStage)}>
                       {stageOptions.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}
                     </select>

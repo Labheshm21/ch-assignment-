@@ -161,6 +161,8 @@ class ContactUpsertRequest(BaseModel):
 
 ContactStageValue = Literal[
     "new",
+    "qualified",
+    "rejected",
     "contacted",
     "replied",
     "interested",
@@ -220,6 +222,22 @@ class ContactImportResponse(BaseModel):
     updated: int
     rejected: int
     errors: list[ContactImportError]
+
+
+class GtmMetricsResponse(BaseModel):
+    contacts: int
+    needs_review: int
+    qualified: int
+    rejected: int
+    campaigns: int
+    emails_sent: int
+    recipients_contacted: int
+    replies: int
+    interested: int
+    meetings: int
+    reply_rate: float
+    interest_rate: float
+    meeting_rate: float
 
 
 class CampaignStepRequest(BaseModel):

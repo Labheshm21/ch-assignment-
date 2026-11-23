@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import ContactsPanel from "./contacts-panel";
 import CampaignsPanel from "./campaigns-panel";
+import DashboardPanel from "./dashboard-panel";
 import { API_URL, api } from "@/lib/api";
 
 type AuthStatus = {
@@ -47,6 +48,15 @@ type ScheduledEmail = {
   created_at: string;
 };
 
+type View = "dashboard" | "scheduler" | "campaigns" | "contacts";
+
+const viewCopy: Record<View, { eyebrow: string; title: string }> = {
+  dashboard: { eyebrow: "PIPELINE", title: "How is outreach performing?" },
+  scheduler: { eyebrow: "COMMAND CENTER", title: "What should happen next?" },
+  campaigns: { eyebrow: "CAMPAIGNS", title: "Reach the right people." },
+  contacts: { eyebrow: "CONTACTS", title: "Who are you reaching?" },
+};
+
 const examples = [
   "Send an email to alex@example.com tomorrow at 9 AM saying: Great meeting you. Subject: Following up",
   "Send 3 emails to me@example.com, one every hour starting at 1 PM. Subject: Delivery test. Body: Scheduled check-in.",
@@ -69,7 +79,7 @@ export default function Home() {
   const [jobs, setJobs] = useState<ScheduledEmail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"scheduler" | "campaigns" | "contacts">("scheduler");
+  const [activeView, setActiveView] = useState<View>("dashboard");
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
   const refresh = useCallback(async () => {
@@ -227,6 +237,7 @@ export default function Home() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Product navigation">
+          <button className={activeView === "dashboard" ? "active" : ""} onClick={() => setActiveView("dashboard")}><span>▦</span>Dashboard</button>
           <button className={activeView === "scheduler" ? "active" : ""} onClick={() => setActiveView("scheduler")}><span>↗</span>Scheduler</button>
           <button className={activeView === "campaigns" ? "active" : ""} onClick={() => setActiveView("campaigns")}><span>◫</span>Campaigns</button>
           <button className={activeView === "contacts" ? "active" : ""} onClick={() => setActiveView("contacts")}><span>◎</span>Contacts</button>
@@ -291,13 +302,13 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow dark">{activeView === "scheduler" ? "COMMAND CENTER" : activeView === "campaigns" ? "CAMPAIGNS" : "CONTACTS"}</p><h2>{activeView === "scheduler" ? "What should happen next?" : activeView === "campaigns" ? "Reach the right people." : "Who are you reaching?"}</h2></div>
+          <div><p className="eyebrow dark">{viewCopy[activeView].eyebrow}</p><h2>{viewCopy[activeView].title}</h2></div>
           <div className="cloud-badge"><span /> Cloud worker active</div>
         </header>
 
         {error && <div className="error-banner">{error}</div>}
 
-        {activeView === "scheduler" ? <>
+        {activeView === "dashboard" ? <DashboardPanel key={auth.workspace_id ?? "disconnected"} connected={auth.connected} workspaceId={auth.workspace_id} /> : activeView === "scheduler" ? <>
         <section className="composer-card">
           <div className="assistant-line"><div className="avatar">AI</div><p>Tell me who to email, what to say, and when to send it.</p></div>
           <form onSubmit={analyze}>

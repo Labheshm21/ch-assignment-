@@ -22,6 +22,8 @@ class EmailStatus(str, enum.Enum):
 
 class ContactStage(str, enum.Enum):
     new = "new"
+    qualified = "qualified"
+    rejected = "rejected"
     contacted = "contacted"
     replied = "replied"
     interested = "interested"
@@ -34,6 +36,7 @@ class ContactStage(str, enum.Enum):
 
 CAMPAIGN_BLOCKED_CONTACT_STAGES = frozenset(
     {
+        ContactStage.rejected.value,
         ContactStage.replied.value,
         ContactStage.interested.value,
         ContactStage.not_interested.value,

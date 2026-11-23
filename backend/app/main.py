@@ -31,6 +31,7 @@ from .schemas import (
     ContactResponse,
     ContactStageUpdateRequest,
     ContactUpsertRequest,
+    GtmMetricsResponse,
     ParseIntentRequest,
     ParsedEmailIntent,
     ScheduleBatchResponse,
@@ -58,6 +59,7 @@ from .services.campaigns import (
     serialize_campaign,
 )
 from .services.intent import parse_email_intent
+from .services.metrics import get_gtm_metrics
 from .services.oauth import build_oauth_flow, serialize_credentials
 from .services.scheduling import create_schedule_batch
 
@@ -360,6 +362,14 @@ def list_contacts(
         )
         for contact in contacts
     ]
+
+
+@app.get("/api/metrics", response_model=GtmMetricsResponse)
+def workspace_metrics(
+    workspace: Workspace = Depends(current_workspace),
+    db: Session = Depends(get_db),
+) -> GtmMetricsResponse:
+    return get_gtm_metrics(db, workspace_id=workspace.id)
 
 
 @app.post("/api/contacts", response_model=ContactMutationResponse)
