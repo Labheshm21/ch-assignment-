@@ -1,6 +1,20 @@
 # Relay AI
 
-Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connects Gmail, manages contacts in a workspace, describes an email request in natural language, reviews the parsed plan, and confirms it. Durable database jobs are then processed by a separate worker, so delivery continues after the browser and the user's computer are closed.
+**A human-in-the-loop GTM engine for sourcing, qualifying, and contacting technical prospects.**
+
+Relay turns an Apollo export into a measurable outreach pipeline: n8n imports and deduplicates prospects, Relay calculates an explainable fit score, a person approves each lead, and the worker delivers personalized Gmail sequences. Replies automatically stop future follow-ups, lifecycle changes flow into the workspace dashboard, and qualified leads can be handed off to HubSpot.
+
+[Live demo](https://3.21.121.96.sslip.io) · [Architecture](docs/architecture.md)
+
+## Why this exists
+
+Outbound teams often stitch together prospecting, spreadsheets, email tools, and a CRM with manual copy-paste work. Relay demonstrates the complete workflow in one portfolio project while keeping consequential decisions—lead approval and campaign launch—under human control.
+
+```text
+Apollo → n8n → score and review → personalized campaign → Gmail
+                         ↓                  ↓
+                     HubSpot          replies and metrics
+```
 
 ## What is implemented
 
@@ -14,30 +28,47 @@ Relay AI is a cloud-ready Gmail scheduling and outreach assistant. A user connec
 - Multi-workspace client switcher with session-backed selection and owner/admin/member roles
 - Workspace-scoped contact management with manual add, edit, search, delete, CSV import, and CSV export
 - Case-insensitive contact upsert, scoped per workspace, so repeat imports update instead of duplicate
+- Explainable prospect scoring with a human review queue; only approved contacts can enter campaigns
 - Workspace-scoped multi-step campaigns with contact selection, personalized templates, recipient preview, scheduled bulk delivery, optional staggering, per-step status tracking, and automatic stop-on-reply
 - Contact lifecycle stages with automatic contacted/replied updates, campaign suppression, and one active sequence per contact
 - Explainable Reactor-fit scoring with account intelligence, priority filters, and Apollo/Clay-friendly CSV fields
 - API-key protected, workspace-scoped CSV automation endpoint for n8n and Apollo exports
+- Live GTM dashboard for sourced, qualified, contacted, replied, interested, and meeting-stage contacts
+- HubSpot CRM handoff through n8n for qualified prospects and lifecycle updates
 - Encrypted OAuth credential storage
 - Docker Compose for the frontend, API, worker, and PostgreSQL
+- HTTPS deployment on AWS EC2 through Caddy, with a separately hosted n8n workflow editor
 - Unit tests for campaign isolation/status tracking, schedule expansion, timezone conversion, and Gmail MIME generation
 
-The NVIDIA model only produces a proposed intent. Application code validates it against a typed schema and stores the schedule; the model never receives Gmail credentials and never sends an email directly.
+The Mistral model served through NVIDIA NIM only produces a proposed scheduling intent. Application code validates it against a typed schema and stores the schedule; the model never receives Gmail credentials and never sends an email directly.
 
 ## Architecture
 
-```text
-Next.js browser UI (scheduler + contacts + campaigns)
-        |
-        v
-FastAPI API -----> NVIDIA NIM API (intent extraction only)
-        |
-        v
-PostgreSQL durable queue
-        |
-        v
-Python worker -----> Gmail API
+```mermaid
+flowchart LR
+    A[Apollo] -->|CSV| N[n8n]
+    N -->|secured import| API[FastAPI]
+    UI[Next.js UI] <-->|review and campaigns| API
+    API <-->|validated intent| AI[Mistral via NVIDIA NIM]
+    API <--> DB[(PostgreSQL)]
+    DB <--> W[Python worker]
+    W <-->|send and reply metadata| G[Gmail API]
+    N -->|qualified lead sync| H[HubSpot CRM]
+    DB -->|workspace metrics| UI
 ```
+
+See the [full system architecture](docs/architecture.md) for service boundaries, trust boundaries, and the lead lifecycle.
+
+## GTM workflow
+
+1. **Source:** Search an ICP in Apollo and export selected prospects as CSV.
+2. **Ingest:** n8n sends the export to Relay's API-key protected workspace endpoint.
+3. **Qualify:** Relay validates, deduplicates, and scores each account using explicit fit signals.
+4. **Review:** A person approves or rejects each prospect; unapproved contacts cannot be scheduled.
+5. **Engage:** Relay personalizes and schedules up to ten campaign steps for up to 100 recipients.
+6. **React:** The worker sends through Gmail, detects replies from thread metadata, and cancels that recipient's remaining steps.
+7. **Measure:** The dashboard reports funnel counts and reply, interest, and meeting rates.
+8. **Handoff:** n8n syncs qualified prospects and lifecycle updates to HubSpot for CRM follow-up.
 
 ## Prerequisites
 
