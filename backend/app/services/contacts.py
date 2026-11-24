@@ -12,6 +12,7 @@ from ..models import (
     CampaignRecipient,
     CampaignRecipientState,
     Contact,
+    ContactStage,
     EmailStatus,
     ScheduledEmail,
     User,

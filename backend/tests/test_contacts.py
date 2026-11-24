@@ -12,6 +12,7 @@ from app.services.contacts import (
     get_or_create_personal_workspace,
     import_contacts_csv,
     score_contact_fit,
+    set_contact_stage,
     upsert_contact,
 )
 
@@ -87,6 +88,23 @@ def test_upsert_uses_case_insensitive_email_without_erasing_missing_fields() -> 
         assert "gaming use case +30" in second.fit_reason
         assert second.stage == "new"
         assert second.tags == ["Founder"]
+
+
+def test_contact_can_be_moved_back_to_review() -> None:
+    with make_session() as db:
+        user = User(email="owner@example.com", google_credentials_encrypted="encrypted")
+        db.add(user)
+        db.commit()
+        workspace = get_or_create_personal_workspace(db, user)
+        contact, _ = upsert_contact(
+            db,
+            workspace_id=workspace.id,
+            payload=ContactUpsertRequest(email="ada@example.com", name="Ada"),
+        )
+        contact.stage = "qualified"
+
+        assert set_contact_stage(db, contact=contact, stage="new") == 0
+        assert contact.stage == "new"
 
 
 def test_csv_import_adds_updates_and_rejects_rows() -> None:
